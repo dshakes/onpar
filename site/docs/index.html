@@ -3,8 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>onpar docs — run open models properly, and understand why</title>
-<meta name="description" content="How to pick, deploy, tune and prove open-weight LLMs. Includes a from-scratch education module on GPUs, prefill/decode, KV cache, batching, quantization and the serving stack.">
+<title>onpar docs — local inference, solved and proven</title>
+<meta name="description" content="How to size, serve, auto-tune and prove open-weight LLMs on your own hardware and traffic, across seven engines. Includes a from-scratch education module on GPUs, prefill/decode, KV cache, batching, quantization and the serving stack.">
+<meta property="og:title" content="onpar docs — local inference, solved and proven">
+<meta property="og:description" content="Size, serve, auto-tune and prove open-weight LLMs on your own hardware and traffic, across seven engines, with a from-scratch course on inference.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dshakes.github.io/onpar/docs/">
+<meta property="og:image" content="https://dshakes.github.io/onpar/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="onpar: local inference, solved and proven. The landing page hero beside a terminal showing onpar fit sizing two models on an M4 Max and onpar guard voiding a receipt.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◆</text></svg>">
 <style>
   :root{
@@ -192,7 +201,7 @@
 <body>
 
 <header><nav>
-  <a class="brand" href="../"><i class="mark"></i>click<b>llm</b></a>
+  <a class="brand" href="../"><i class="mark"></i>on<b>par</b></a>
   <span style="color:var(--ink3);font-size:13.5px">docs</span>
   <span class="sp"></span>
   <a class="n" href="../">Home</a>
@@ -237,10 +246,11 @@
 
 <main>
 
-<h1>Run open models properly —<br>and understand why.</h1>
-<p class="lede">Two audiences, one tool. If you've never sized a KV cache, the
-  <a href="#edu-why">Learn</a> section teaches the whole stack from first principles. If you have,
-  skip to <a href="#tuning">optimization controls</a> and drive it directly.</p>
+<h1>Local inference, solved —<br>and proven on your traffic.</h1>
+<p class="lede">onpar sizes the model to your machine, picks the engine, writes its native config
+  with every knob set, and proves the result on your own traffic. If you've never sized a KV
+  cache, <a href="#edu-why">Learn</a> teaches the stack from first principles. If you have, skip
+  to <a href="#tuning">optimization controls</a> and drive it directly.</p>
 
 <div class="note">
   <p><b>Status legend.</b> <span class="pill live">LIVE</span> works today ·
@@ -250,25 +260,29 @@
 
 <!-- ══════════ WHAT ══════════ -->
 <h2 id="what">What this is</h2>
-<p>onpar helps you <em>choose</em>, <em>deploy</em>, <em>tune</em>, and <em>trust</em> open-weight
-language models on hardware you control.</p>
+<p>onpar is the whole path from "what can this machine run?" to "this open model is proven on
+our traffic, and here is the rollback." It makes three promises: it solves local inference, it
+proves the result on your traffic, and agents can drive every step.</p>
 <div class="cards">
-  <div class="card"><h4>Choose</h4><p>What actually runs on your silicon, at your context and
-    concurrency, with licences that survive legal review.</p></div>
-  <div class="card"><h4>Deploy</h4><p>Native config for vLLM, SGLang, llm-d, llama.cpp or MLX —
-    tuned, benchmarked, and runnable without us.</p></div>
-  <div class="card"><h4>Tune</h4><p>Every knob derived from your hardware and traffic, then
-    measured and reverted if it didn't help.</p></div>
-  <div class="card"><h4>Trust</h4><p>Your traffic becomes a private benchmark, so switching is a
-    decision with evidence rather than a leap.</p></div>
+  <div class="card"><h4>Size</h4><p>What actually runs on your silicon, at your context and
+    concurrency. MoE on total params, GQA on kv_heads, MLA on kv_lora_rank, and the arithmetic
+    printed for every number.</p></div>
+  <div class="card"><h4>Serve</h4><p>One of seven engines: vLLM, vLLM-TPU, SGLang, llm-d,
+    llama.cpp, MLX or Ollama. Native config with twelve knobs set, runnable with onpar
+    uninstalled.</p></div>
+  <div class="card" id="prove"><h4>Prove</h4><p>Your traffic becomes a private benchmark, agent loops
+    replayed step by step. Every score carries an interval, and thin evidence shows
+    <code>?</code>.</p></div>
+  <div class="card"><h4>Delegate</h4><p>Describe it in a sentence, or give an agent the eleven
+    read-only MCP tools. Nothing authorises a cutover except shadow mode.</p></div>
 </div>
 
 <!-- ══════════ KIOSK ══════════ -->
 <h2 id="kiosk">The kiosk walkthrough <span class="pill live">LIVE</span></h2>
-<p>One command drives everything. You say what you are building in your own words; it reads the
-  machine, picks a model, and explains every choice it made on your behalf. It asks only when it
-  genuinely cannot decide — and while it waits, it answers with its assumption stated out loud
-  rather than with a blank prompt.</p>
+<p>One command goes from a sentence to a runnable server. You say what you are building; it reads
+  the machine, sizes a model, picks the engine, sets the knobs, and explains every choice it made
+  on your behalf. It asks only when the answer would change the plan, and while it waits it
+  answers with its assumption stated out loud rather than with a blank prompt.</p>
 
 <pre><span class="u">$ onpar build "coding assistant for 20 engineers"</span>
 
@@ -368,9 +382,10 @@ eval result moves production traffic without a human.</pre>
 <!-- ══════════ EDUCATION ══════════ -->
 <hr>
 <h2 id="edu-why"><i class="chip"></i>Learn: why a GPU at all</h2>
-<div class="note"><p>Prefer it on your own numbers? <code>onpar learn basics</code> walks the same
-  ground in fifteen lessons where every figure is computed by the solver for the machine you are
-  on. The chapters below are the written version, with the diagrams.</p></div>
+<div class="note"><p><b>Learn on your own numbers.</b> <code>onpar learn basics</code> and
+  <code>onpar learn intermediate</code> walk the same ground in fifteen lessons, and every figure
+  is computed by the solver for the machine you are on. A 24 GB GPU and a 128 GB Mac reach
+  different conclusions. The chapters below are the written version, with the diagrams.</p></div>
 <p>Generating one token means multiplying your input by every weight in the model. A 30-billion
   parameter model at 8 bits is ~30 GB of numbers, and you read <em>all of them</em> to produce
   <em>one</em> token. Do that 50 times a second and you need to move 1.5 TB/s.</p>
@@ -970,7 +985,7 @@ Qwen3 30B-A3B (MoE) @ q8, 32,768 ctx, concurrency 8
   needs 1.4 TB of memory.</p>
 <div class="note">
   <p><b>Leaderboards build a shortlist, never a decision.</b> Public benchmarks are not your traffic.
-  They narrow 41 models to 7; <a href="#">stage ④</a> decides between those 7 using your own prompts.</p>
+  They narrow 41 models to 7; <a href="#prove">stage ④</a> decides between those 7 using your own prompts.</p>
 </div>
 
 <h2 id="models">Managing models <span class="pill live">LIVE</span></h2>

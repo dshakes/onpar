@@ -1,9 +1,12 @@
 # GA readiness
 
-**Assessed 2026-08-17 against 1.3.3.** Written by running the product as a
-consumer would, from the published packages — not by reading the source.
+**Assessed 2026-08-17 against 1.3.3. Status refreshed 2026-11-01 for 1.3.4.**
+The assessment was written by running the product as a consumer would, from the
+published packages. The 1.3.4 refresh updates blocker status from the repo and
+its ADRs. It did **not** re-run the clean-environment install, and the registry
+check below is dated to 1.3.3.
 
-The badge moved from `pre-alpha` to `beta` at 1.3.3. That is a claim about the
+The badge reads `beta`, and moved there at 1.3.3. That is a claim about the
 **install**, not the code: every stage command ships, all four registries carry
 matching artifacts, and the three-package install is documented and verified.
 
@@ -20,6 +23,11 @@ and say the confidence.
 Every stage of the seven-stage loop **exists and runs**. What is not GA is the
 *install*: the product is three PyPI distributions, and a consumer who follows
 the README gets one of them.
+
+That was the state when this was assessed. `onpar doctor` now reports the same
+gaps up front (gateway, compiled extension, engine) and prints the next command.
+The documented evidence-half install is one line:
+`pip install onpar onpar-gateway onpar-core`.
 
 ```
 $ pip install onpar && onpar observe --upstream https://api.openai.com/v1
@@ -60,12 +68,14 @@ Verified by invoking each command from a clean environment.
 | Cut over | `onpar migrate` | **runs** |
 | Guard | `onpar guard` | **runs** |
 
-Also shipping: `measure`, `receipt`, `brief`, `advise`, `box`, `watch`, `ui`,
-`desktop`, `kernel`, and the catalog commands.
+Also shipping: `doctor`, `learn`, `label`, `measure`, `receipt`, `brief`,
+`advise`, `box`, `watch`, `ui`, `desktop`, `kernel`, and the catalog commands.
+`distill --import` reads a Langfuse generations export. `prove --replay-sessions`
+replays whole agent sessions from the recording. Bare `onpar` opens a
+conversation on a terminal and exits 2 in CI. `onpar-mcp` serves eleven
+read-only tools.
 
-`docs/50-roadmap.md` still marks **Phase 0 as "in progress"** while Phases 1–6
-carry no marker. That is stale: the commands for every phase exist. The roadmap
-is describing an earlier repo.
+The roadmap's stale Phase 0 marker is corrected (blocker 3).
 
 ---
 
@@ -78,8 +88,14 @@ is describing an earlier repo.
 - **The refusal behaviour.** A cell with too little evidence prints `?`, and since
   #259 says **"not proven"** rather than borrowing a verdict. A perfect score on
   twelve items does not clear a 90% bar and the tool says so.
-- **The four publish channels.** PyPI, npm, Homebrew and GitHub Releases all carry
-  1.3.3, verified against the registries rather than a workflow's green tick.
+- **The four publish channels.** PyPI, npm, Homebrew and GitHub Releases all carried
+  1.3.3 when verified against the registries rather than a workflow's green tick.
+  All three PyPI distributions are live at 1.3.4. The other channels at 1.3.4 are
+  UNVERIFIED here.
+- **Agentic evidence.** Eval items replay the step, not the prompt. Tool-call
+  arguments are validated against the offered schema, tool text in content is
+  caught as a serving-config fault, and a whole-session replay stops at a miss
+  rather than making a live tool call ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
 - **Provenance.** Generated config carries a header saying what was chosen and
   that it runs with onpar uninstalled; a test asserts the generated artifact never
   shells back into the tool (NFR-4).
@@ -168,7 +184,9 @@ TCP in `onpar-gateway/tests/capture.rs`.
 
 ### 9. Still open: a real run against live traffic
 
-Blocker 2 above remains the one that cannot be closed from inside the repo.
+Same as blocker 2. It remains the one that cannot be closed from inside the repo.
+The capture path now handles three API shapes, which widens what that run must
+cover.
 
 ---
 
@@ -193,15 +211,15 @@ nobody has tested.
 
 ## The honest summary
 
-**onpar 1.3.3 is a working tool that is honest about what it has not proven.**
+**onpar 1.3.4 is a working tool that is honest about what it has not proven.**
 The sizing half is genuinely good and genuinely dependency-free. The evidence half
-is built, runs, and now installs in one documented command — but it has not been
-exercised against real traffic.
+is built, runs, and installs in one documented command. It now covers agentic
+traffic per ADR-0020. It has still not been exercised against real traffic.
 
 That last clause is why the badge says `beta` and not `stable`. Blockers 1 and 3
-closed in 1.3.3. Blocker 2 is the one that matters, and it cannot be closed from
+closed in 1.3.3, and 5 to 8 closed on 2026-10-31. Blocker 2 is the one that matters, and it cannot be closed from
 inside the repo: it needs a real customer, a real upstream, and a willingness to
-look at what lands on disk. Blockers 4 and 5 are known, bounded, and written down
+look at what lands on disk. Blocker 4 is known, bounded, and written down
 where a reader will find them.
 
 The rule this document holds itself to is the one the product holds its own output

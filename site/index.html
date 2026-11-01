@@ -3,12 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>onpar — is the open model on par?</title>
-<meta name="description" content="Is the open model on par? Answered on your traffic, your hardware, your budget — per task, with confidence intervals, and a ? where the evidence is too thin to say. Then served in one command, with no config file.">
-<meta property="og:title" content="onpar — Is the open model on par?">
-<meta property="og:description" content="No config file. Ever. It reads your hardware, sizes the KV cache, picks the engine, sets the flags. Agents drive it natively. Your traffic becomes the benchmark, and the benchmark becomes the proof.">
+<title>onpar — local inference, solved and proven</title>
+<meta name="description" content="Local inference, solved: onpar sizes the model to your machine, picks one of seven engines and writes its native config with twelve knobs set for you. Then it proves the open model on your own traffic, with intervals, and agents can drive every step.">
+<meta property="og:title" content="onpar — local inference, solved and proven">
+<meta property="og:description" content="Size it, pick the engine, write native config with twelve knobs set, prove it on your traffic with intervals. No config file to write. Agents drive it over MCP.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://dshakes.github.io/onpar/assets/switch-loop.svg">
+<meta property="og:url" content="https://dshakes.github.io/onpar/">
+<meta property="og:image" content="https://dshakes.github.io/onpar/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="onpar: local inference, solved and proven. The landing page hero beside a terminal showing onpar fit sizing two models on an M4 Max and onpar guard voiding a receipt.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◆</text></svg>">
 <style>
@@ -380,6 +384,18 @@
   .ex-err{font-size:14.5px;color:var(--alarm);margin-top:24px}
   /* No text shown when loading — avoids a flash of placeholder copy. */
   #ex-out{min-height:4rem}
+
+  /* --- learn: the fifteen lessons, two tracks ------------------------------ */
+  .lessons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:30px}
+  .lessons ol{margin:8px 0 0;padding-left:22px;font-size:14px;color:var(--ink2);line-height:1.75}
+  .lessons a{color:inherit}
+  .lessons a:hover{color:var(--candidate)}
+  .lessons h3{margin:0;font-size:15px;font-weight:650}
+  .lessons h3 code{color:var(--candidate)}
+  @media (max-width:900px){.lessons{grid-template-columns:1fr}}
+  .covtable td.cov{text-align:center;color:var(--ink3);font-size:15px}
+  .covtable td.cov.yes{color:var(--candidate)}
+  .covtable tr.us td{background:var(--panel2)}
 </style>
 </head>
 <body>
@@ -388,10 +404,13 @@
 <nav id="nav"><div class="navin">
   <a class="brand" href="#top"><span class="mark"><i></i><i></i><i></i></span>onpar</a>
   <div class="navlinks">
-    <a href="#problem">Why</a>
+    <a href="#doors">Start</a>
     <a href="#loop">The loop</a>
+    <a href="#autotune">Autotune</a>
+    <a href="#problem">Evals</a>
     <a href="#sizing">Sizing</a>
     <a href="#explore">Explore</a>
+    <a href="#compare">Compare</a>
     <a href="#learn">Learn</a>
     <a href="#install">Install</a>
     <a href="docs/">Docs</a>
@@ -429,11 +448,12 @@
   <div class="herogrid">
     <div>
       <span class="pill"><i class="dot"></i>local-first · zero telemetry · Apache-2.0</span>
-      <h1>Is the open&nbsp;model<br><span class="grad">on par?</span></h1>
-      <p class="lede">No config file. Ever. It reads your hardware, sizes the KV cache,
-        picks the engine, sets the flags — and <b>prints the arithmetic behind every
-        number</b>. Agents drive it natively. When you need to know the model is good
-        enough, that is one more command, answered on <em>your</em> traffic.</p>
+      <h1>Local inference,<br><span class="grad">solved and proven.</span></h1>
+      <p class="lede"><b>Solved:</b> it reads your machine, sizes the model, picks one of seven
+        engines and writes that engine's native config with twelve knobs already set.
+        <b>Proven:</b> the open model is scored on <em>your</em> traffic, with an interval on
+        every number and a <code>?</code> where the evidence is thin.
+        <b>Agent-driven:</b> describe it in a sentence, or let an agent run the loop over MCP.</p>
       <div class="ci" aria-hidden="true">
         <span class="whisk"></span><span class="bar"></span><span class="pt"></span>
         <span class="bar" style="background:linear-gradient(90deg,var(--candidate),var(--ink3))"></span>
@@ -441,9 +461,9 @@
       </div>
       <div class="cilabel"><span>91%</span><span>the interval, not the point</span><span>96%</span></div>
       <div class="chips">
+        <span class="chip"><b>no config file</b> to write</span>
         <span class="chip"><b>your traffic</b>, not a benchmark</span>
         <span class="chip"><b>a rollback button</b>, not a leap</span>
-        <span class="chip"><b>every number</b> drillable to the prompt</span>
       </div>
     </div>
 
@@ -458,10 +478,10 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="n grad">2527</div><div class="l">tests · Rust + Python</div></div>
-    <div class="stat"><div class="n">0</div><div class="l">bytes of telemetry, by design</div></div>
+    <div class="stat"><div class="n grad">2530</div><div class="l">tests · 2233 Python, 297 Rust</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">bytes of telemetry, egress or accounts</div></div>
     <div class="stat"><div class="n">9</div><div class="l">diagrams, palette-validated</div></div>
-    <div class="stat"><div class="n">7</div><div class="l">engines planned for and emitted</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">engines, native config for each</div></div>
   </div>
 </header>
 
@@ -474,48 +494,52 @@
 </figure>
 </div>
 
-<section id="problem"><div class="wrap rise">
-  <p class="eyebrow">The three ways a migration dies</p>
-  <h2>Everyone can run the model.<br>Nobody can prove it's&nbsp;safe.</h2>
-  <p class="sub">Deployment is solved six times over. The gap is the <em>decision</em> — and it
-    is usually made on a vibe, a leaderboard, or a dashboard that has never seen your traffic.</p>
-
+<section id="doors"><div class="wrap rise">
+  <p class="eyebrow">Three doors in</p>
+  <h2>Ask in a sentence, learn on your numbers,<br>or run the whole&nbsp;loop.</h2>
+  <p class="sub">Every door leads to the same solver and the same loop. Pick the one that matches
+    what you know today.</p>
   <div class="cards">
     <div class="card">
-      <div class="cardtop"><span class="ico">📊</span><span class="tag bad">wrong data</span></div>
-      <h3>A benchmark isn't your workload</h3>
-      <p>MMLU says nothing about whether a model can extract line items from <em>your</em>
-        invoices. onpar builds the eval set from traffic you actually served — redacted
-        before it touches disk, clustered by task shape. Agent loops are replayed one
-        <em>step</em> at a time with everything the incumbent saw — system prompt, tool
-        schemas, prior tool results — and scored on the move: same tool, valid arguments,
-        chance-corrected agreement. Whole sessions are replayed from the recording, and
-        stop at the first call the recording cannot answer.</p>
-      <img src="assets/agentic-replay.svg" alt="Agentic evals: the step is the unit — one step replayed teacher-forced, and a whole session replayed from the recording" style="width:100%;margin-top:12px;border-radius:8px">
+      <div class="cardtop"><span class="ico">💬</span><span class="tag ok">no jargon</span></div>
+      <h3>New to all of this</h3>
+      <p>Type <code>onpar</code> and describe what you are building. It asks one question
+        at a time, only when the answer changes the plan, and you leave with a model, a
+        quantisation and the memory it needs.</p>
     </div>
     <div class="card">
-      <div class="cardtop"><span class="ico">🎲</span><span class="tag bad">no confidence</span></div>
-      <h3>A score without an interval is a guess</h3>
-      <p>"94%" over eleven samples is noise wearing a number. Every cell carries a Wilson
-        interval, and a cell with too little evidence shows <code>?</code> rather than a
-        fabricated score.</p>
+      <div class="cardtop"><span class="ico">📐</span><span class="tag ok">your numbers</span></div>
+      <h3>Curious how it works</h3>
+      <p><code>onpar learn basics</code> is fifteen lessons, basics then intermediate, where
+        every figure is computed by the solver for the machine you are on. A 24 GB GPU and a
+        128 GB Mac get different arithmetic and reach different conclusions.</p>
     </div>
     <div class="card">
-      <div class="cardtop"><span class="ico">🚪</span><span class="tag bad">no way back</span></div>
-      <h3>A cutover with no rollback is a bet</h3>
-      <p>Shadow first, always. Rollback is automatic and easy to trigger; advancing is only
-        ever a <em>proposal</em> a human applies. The gateway re-derives that rule from the
-        numbers, so buggy automation still cannot escalate.</p>
+      <div class="cardtop"><span class="ico">🩺</span><span class="tag ok">the loop</span></div>
+      <h3>An engineer with traffic</h3>
+      <p><code>onpar doctor</code> checks the gateway, the extension and an engine in the order
+        the loop needs them, and prints the next command. Then observe, distill, fit, prove,
+        migrate. Each stage can say no.</p>
     </div>
   </div>
+
+  <div class="note" id="agents"><p><b>Agents come through the same doors.</b>
+    <code>onpar-mcp</code> exposes eleven read-only tools: fit, explain, where, catalog, advise,
+    build, distill, prove, learn, receipt and guard. There is no cutover, deploy or route tool to
+    call. Exit code 1 means the world did not cooperate, so retry; 2 means the call was wrong, so
+    fix it.</p></div>
+  <figure>
+    <img src="assets/agent-surface.svg" loading="lazy" alt="The MCP surface: eleven read-only tools, two resources confined to the eval root, three prompts, and a wall where cutover, deploy, route and promote would be">
+    <figcaption>Not absent by policy, absent by construction. Captured traffic stays data, never
+      instructions, for every agent that reads it.</figcaption>
+  </figure>
 </div></section>
 
 <section id="loop"><div class="wrap rise">
   <p class="eyebrow">Prove it, then move it</p>
   <h2>Seven stages. Each one can say&nbsp;no.</h2>
-  <p class="sub">Observe your traffic, distill it into task clusters, size what fits, prove
-    equivalence, deploy native config, cut over behind a gate — then keep checking that the
-    proof still holds.</p>
+  <p class="sub">Observe, distill, fit, prove, deploy, cut over, guard. Nothing authorises a
+    cutover except shadow mode, and the guard keeps checking that the proof still holds.</p>
   <figure>
     <div class="anim" data-svg="assets/loop-animated.svg" role="img"
            aria-label="Animated: traffic flowing through seven stages — observe, distill, fit, prove, deploy, cut over, guard — turning closed-model spend into proven open-model inference">
@@ -564,6 +588,167 @@
         the eval set answers questions nobody asks. Something new shipped → your proof is
         still true. Only the first two mean you no longer know whether production is
         adequate, and collapsing them is how a watchdog gets muted.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="autotune"><div class="wrap rise">
+  <p class="eyebrow"><i class="silmark"></i>What it sets for you</p>
+  <h2>Twelve knobs. Seven engines.<br><span class="grad">No config file to write.</span></h2>
+  <p class="sub">The planner decides what should be true, then each engine adapter spells it in
+    that engine's own flags. The output is a real <code>vllm serve</code>, a real
+    <code>InferencePool</code>, a real <code>llama-server</code> line. It runs with onpar
+    uninstalled, and anything an engine cannot express is listed, never faked.</p>
+
+  <figure>
+    <div class="anim" data-svg="assets/autotune.svg" role="img"
+         aria-label="Animated: The twelve settings the planner chooses, the three forks that decide them, and how each of the seven engines expresses them">
+      <noscript><img src="assets/autotune.svg" alt="The twelve settings the planner chooses, the three forks that decide them, and how each of the seven engines expresses them"></noscript>
+    </div>
+    <figcaption>Three forks decide most of it: prefix sharing at or above 0.55 picks the engine,
+      concurrency above 16 turns drafting off, and the latency budget sets the prefill chunk.
+      Projections are roofline estimates, not measured.</figcaption>
+  </figure>
+
+  <div class="cards">
+    <div class="card">
+      <div class="cardtop"><span class="ico">🎛️</span><span class="tag ok">twelve knobs</span></div>
+      <h3>Set from your machine and load</h3>
+      <p>Context length, max concurrent sequences, prefill chunk, prefix reuse, speculative
+        decoding, memory fraction, tensor parallelism, structured output, quantisation, KV-cache
+        dtype, LoRA fleet, and the tool-calling parser.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">🔀</span><span class="tag">seven engines</span></div>
+      <h3>One plan, native everywhere</h3>
+      <p>vLLM, vLLM-TPU, SGLang, llm-d, llama.cpp, MLX and Ollama. On Apple silicon the CUDA
+        engines cannot run at all, so the choice there is MLX, llama.cpp or Ollama, and the
+        plan says why.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">🪜</span><span class="tag warn">degrades honestly</span></div>
+      <h3>A quantisation ladder, then context</h3>
+      <p>fp16, bf16, fp8, q8, q6, q5, q4, q3. When it doesn't fit, precision steps down first,
+        then context halves, then it refuses below a 2k floor. Every step given up is named.</p>
+    </div>
+  </div>
+
+  <div class="note"><p><b>The tool-calling parser is a knob because a wrong one fails
+    silently.</b> With the wrong parser, tool calls come back as plain text with
+    <code>finish_reason: stop</code>. Nothing errors; the agent just stops acting.</p></div>
+</div></section>
+
+<section id="plan"><div class="wrap rise">
+  <p class="eyebrow">Engine and flags, derived</p>
+  <h2>Batch and real-time are tuned in<br><span class="grad">opposite directions.</span></h2>
+  <p class="sub">A stack tuned for throughput and one tuned for tail latency disagree on almost
+    every knob, and the defaults ship somewhere in between. Both are "running vLLM". Only one
+    is running it correctly.</p>
+
+  <div class="cards">
+    <div class="card">
+      <div class="cardtop"><span class="ico">🧩</span><span class="tag">picks the engine</span></div>
+      <h3>Prefix sharing</h3>
+      <p>Above 55% shared prompt tokens, RadixAttention reuses that prefix's KV instead of
+        recomputing it per request — structural, and no vLLM flag reproduces it. Below,
+        PagedAttention is the better-supported default.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">🎯</span><span class="tag">a function of load</span></div>
+      <h3>Speculative decoding</h3>
+      <p>Drafting is a bet that spare compute exists. At high batch there is none, the verify
+        pass competes with real tokens, and throughput <em>drops</em>. Derived from
+        concurrency — never a checkbox.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">⚖️</span><span class="tag warn">has a cost</span></div>
+      <h3>fp8 KV cache</h3>
+      <p>Halves KV memory — offered only when KV is what actually binds. It is the one knob
+        with a real accuracy question, and the reason says so: vLLM publishes no quantitative
+        claim. <em>Prove it before you trust it.</em></p>
+    </div>
+  </div>
+
+  <figure>
+    <img src="assets/edu-spec-decode.svg" loading="lazy" alt="Throughput change from speculative decoding against batch size, positive at low batch and negative beyond about 32">
+    <figcaption>The quantity has a <em>sign</em>. That is why it is derived from your
+      concurrency rather than offered as a switch.</figcaption>
+  </figure>
+
+  <div class="note warn"><p><b>Every engine flag is verified against published docs, never
+    recalled.</b> That rule exists because breaking it shipped a bug:
+    <code>--guided-decoding-backend</code> had been renamed in vLLM, so every
+    structured-output config generated was unrunnable. Where a flag can't be confirmed, the
+    adapter reports a <em>gap</em> rather than a plausible guess.</p></div>
+</div></section>
+
+<section id="telemetry"><div class="wrap rise">
+  <p class="eyebrow">What the dashboard won't tell you</p>
+  <h2>Telemetry that grades the plan<br>that produced&nbsp;it.</h2>
+  <p class="sub">A planner emits a config on assumptions. Then nobody checks. onpar reports
+    only the predictions your deployment <em>falsified</em>.</p>
+
+  <div class="term" style="margin-top:34px">
+    <div class="termbar">
+      <i class="tl" style="background:#fb7185"></i><i class="tl" style="background:#fbbf24"></i>
+      <i class="tl" style="background:#34d399"></i>
+      <span class="termtitle">onpar — engine, right now</span>
+    </div>
+<pre>  candidate-local   <span class="r">KV near full — scheduler is preempting</span>
+  KV cache   <span class="r">████████████████████████░░</span>  <span class="u">94%</span>
+  prefill    <span class="k">██████░░░░░░░░░░░░░░░░░░░░</span>  <span class="u">25%</span>  <span class="c">decode-bound — tune bandwidth</span>
+
+  running <span class="u">14</span>  waiting <span class="u">6</span>  queued <span class="u">60ms</span>  TTFT <span class="u">210ms</span>  e2e <span class="u">640ms</span>
+  prefix hits <span class="u">62%</span>  draft accepted <span class="u">41%</span>  truncated <span class="u">12%</span>  abandoned <span class="u">3%</span>
+
+  <span class="w">THE DEPLOYMENT DISAGREES WITH THE PLAN</span>
+  <span class="w">│</span> speculative decoding was enabled assuming idle compute, but only
+  <span class="w">│</span> <span class="u">41%</span> of drafted tokens are accepted. Below ~60% the draft pass costs
+  <span class="w">│</span> more than it returns — turn it off or change the drafter.
+  <span class="w">│</span> <span class="u">12%</span> of completions stop at the token limit rather than finishing.
+  <span class="w">│</span> That reads as a quality problem and is almost always max_tokens.
+  <span class="w">│</span> the card is at <span class="u">98%</span> memory but the engine's KV cache is only at <span class="u">60%</span>.
+  <span class="w">│</span> Roughly 38% is held by another process — engine telemetry alone
+  <span class="w">│</span> cannot show you this.
+</pre>
+  </div>
+  <p class="sub" style="margin-top:22px">Every field is optional and renders as <code>—</code>
+    when unreadable. A KV utilisation of "0%" reads as <em>plenty of headroom</em>, which is
+    the exact opposite of <em>we could not tell</em>.</p>
+</div></section>
+
+<section id="problem"><div class="wrap rise">
+  <p class="eyebrow">Eval-backed · the three ways a migration dies</p>
+  <h2>Starting a model is easy.<br>Knowing it's good enough is&nbsp;not.</h2>
+  <p class="sub">The switch off a closed API is usually decided on a vibe, a leaderboard, or a
+    dashboard that has never seen your traffic. Each of these three gaps is how one goes wrong.</p>
+
+  <div class="cards">
+    <div class="card">
+      <div class="cardtop"><span class="ico">📊</span><span class="tag bad">wrong data</span></div>
+      <h3>A benchmark isn't your workload</h3>
+      <p>MMLU says nothing about whether a model can extract line items from <em>your</em>
+        invoices. onpar builds the eval set from traffic you actually served — redacted
+        before it touches disk, clustered by task shape. Agent loops are replayed one
+        <em>step</em> at a time with everything the incumbent saw — system prompt, tool
+        schemas, prior tool results — and scored on the move: same tool, valid arguments,
+        chance-corrected agreement. Whole sessions are replayed from the recording, and
+        stop at the first call the recording cannot answer.</p>
+      <img src="assets/agentic-replay.svg" alt="Agentic evals: the step is the unit — one step replayed teacher-forced, and a whole session replayed from the recording" style="width:100%;margin-top:12px;border-radius:8px">
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">🎲</span><span class="tag bad">no confidence</span></div>
+      <h3>A score without an interval is a guess</h3>
+      <p>"94%" over eleven samples is noise wearing a number. Every cell carries a Wilson
+        interval, and a cell with too little evidence shows <code>?</code> rather than a
+        fabricated score.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">🚪</span><span class="tag bad">no way back</span></div>
+      <h3>A cutover with no rollback is a bet</h3>
+      <p>Shadow first, always. Rollback is automatic and easy to trigger; advancing is only
+        ever a <em>proposal</em> a human applies. The gateway re-derives that rule from the
+        numbers, so buggy automation still cannot escalate.</p>
     </div>
   </div>
 </div></section>
@@ -648,50 +833,6 @@
     <code>site/assets/fit-explorer.json</code>.</p>
 </div></section>
 
-<section id="plan"><div class="wrap rise">
-  <p class="eyebrow">Engine and flags, derived</p>
-  <h2>Batch and real-time are tuned in<br><span class="grad">opposite directions.</span></h2>
-  <p class="sub">A stack tuned for throughput and one tuned for tail latency disagree on almost
-    every knob, and the defaults ship somewhere in between. Both are "running vLLM". Only one
-    is running it correctly.</p>
-
-  <div class="cards">
-    <div class="card">
-      <div class="cardtop"><span class="ico">🧩</span><span class="tag">picks the engine</span></div>
-      <h3>Prefix sharing</h3>
-      <p>Above 55% shared prompt tokens, RadixAttention reuses that prefix's KV instead of
-        recomputing it per request — structural, and no vLLM flag reproduces it. Below,
-        PagedAttention is the better-supported default.</p>
-    </div>
-    <div class="card">
-      <div class="cardtop"><span class="ico">🎯</span><span class="tag">a function of load</span></div>
-      <h3>Speculative decoding</h3>
-      <p>Drafting is a bet that spare compute exists. At high batch there is none, the verify
-        pass competes with real tokens, and throughput <em>drops</em>. Derived from
-        concurrency — never a checkbox.</p>
-    </div>
-    <div class="card">
-      <div class="cardtop"><span class="ico">⚖️</span><span class="tag warn">has a cost</span></div>
-      <h3>fp8 KV cache</h3>
-      <p>Halves KV memory — offered only when KV is what actually binds. It is the one knob
-        with a real accuracy question, and the reason says so: vLLM publishes no quantitative
-        claim. <em>Prove it before you trust it.</em></p>
-    </div>
-  </div>
-
-  <figure>
-    <img src="assets/edu-spec-decode.svg" loading="lazy" alt="Throughput change from speculative decoding against batch size, positive at low batch and negative beyond about 32">
-    <figcaption>The quantity has a <em>sign</em>. That is why it is derived from your
-      concurrency rather than offered as a switch.</figcaption>
-  </figure>
-
-  <div class="note warn"><p><b>Every engine flag is verified against published docs, never
-    recalled.</b> That rule exists because breaking it shipped a bug:
-    <code>--guided-decoding-backend</code> had been renamed in vLLM, so every
-    structured-output config generated was unrunnable. Where a flag can't be confirmed, the
-    adapter reports a <em>gap</em> rather than a plausible guess.</p></div>
-</div></section>
-
 <section id="box"><div class="wrap rise">
   <p class="eyebrow">Inference in a box</p>
   <h2>It is not a container.<br>A container can't reach Apple's&nbsp;GPU.</h2>
@@ -704,15 +845,75 @@
   </figure>
 </div></section>
 
+<section id="compare"><div class="wrap rise">
+  <p class="eyebrow">Compare · as of 31 Oct 2026</p>
+  <h2>Gateways assume the model is chosen.<br>Eval tools assume it's&nbsp;served.</h2>
+  <p class="sub">The five products closest to the thesis, against the six stages a migration
+    needs. Each is more mature than onpar at what it does. None joins the stages up.</p>
+
+  <figure>
+    <div class="anim" data-svg="assets/landscape-2026.svg" role="img"
+         aria-label="Animated: The five products closest to onpar as of 31 October 2026, Kitaru, Langfuse, Braintrust, promptfoo and LiteLLM, against capture, session replay, statistical verdict, hardware sizing, native serving config and a cutover gate">
+      <noscript><img src="assets/landscape-2026.svg" alt="The five products closest to onpar as of 31 October 2026, Kitaru, Langfuse, Braintrust, promptfoo and LiteLLM, against capture, session replay, statistical verdict, hardware sizing, native serving config and a cutover gate"></noscript>
+    </div>
+  </figure>
+
+  <div class="tablewrap"><table class="covtable">
+    <thead><tr><th>Product</th><th>Capture proxy</th><th>Session replay, recorded tool results</th>
+      <th>Statistical verdict</th><th>Hardware sizing</th><th>Native serving config</th>
+      <th>Cutover gate + rollback</th></tr></thead>
+    <tbody>
+    <tr><td><b>Kitaru</b><br><span class="ex-dim">316 stars · v0.7.0, 30 Oct</span><br><span class="ex-dim">replay with a model swap</span></td><td class="cov" aria-label="no">—</td><td class="cov yes" aria-label="yes">✓</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td></tr>
+    <tr><td><b>Langfuse</b><br><span class="ex-dim">36.8k stars · v4.72.0, 29 Oct</span><br><span class="ex-dim">experiments on traces</span></td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td></tr>
+    <tr><td><b>Braintrust</b><br><span class="ex-dim">closed · Pro $249/mo, third-party reported</span><br><span class="ex-dim">trace to eval, hosted</span></td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td></tr>
+    <tr><td><b>promptfoo</b><br><span class="ex-dim">26.7k stars · 0.125.1, 25 Oct</span><br><span class="ex-dim">output-level evals, CLI</span></td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td></tr>
+    <tr><td><b>LiteLLM</b><br><span class="ex-dim">62.4k stars · v1.106.6, 28 Oct</span><br><span class="ex-dim">gateway, no quality judgement</span></td><td class="cov yes" aria-label="yes">✓</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td><td class="cov" aria-label="no">—</td></tr>
+    <tr class="us"><td><b>onpar</b><br><span class="ex-dim">this project</span><br><span class="ex-dim">the whole path</span></td><td class="cov yes" aria-label="yes">✓</td><td class="cov yes" aria-label="yes">✓</td><td class="cov yes" aria-label="yes">✓</td><td class="cov yes" aria-label="yes">✓</td><td class="cov yes" aria-label="yes">✓</td><td class="cov yes" aria-label="yes">✓</td></tr>
+    </tbody>
+  </table></div>
+  <p class="ex-meta">Stars, releases and pricing as recorded in a market scan dated 31 Oct 2026.
+    A dash means the stage is absent or out of scope in the vendor's own material. Langfuse runs
+    experiments on production traces but has no capture proxy or statistical verdict; Braintrust
+    and Langfuse go trace to dataset, not tool-history replay; promptfoo is output-level only.</p>
+</div></section>
+
 <section id="learn"><div class="wrap rise">
   <p class="eyebrow">Inference from first principles</p>
   <h2>If you've never sized a KV cache,<br>start here.</h2>
   <p class="sub">Nine diagrams on a palette validated for colour-vision deficiency against the
     real surface — computed, not chosen by eye. The full course, with the arithmetic, is in
     the <a href="docs/#edu-why">docs</a>.</p>
-  <p class="sub">Or run <code>onpar learn basics</code> for an interactive curriculum where
-    every figure is computed by the solver for the machine you are on — not a textbook example,
-    the actual numbers for your hardware.</p>
+  <p class="sub">Or run <code>onpar learn basics</code> and take the same course on your own
+    numbers: fifteen lessons where every figure is computed by the solver for the machine you are
+    on, not a textbook example.</p>
+
+  <div class="lessons">
+    <div class="card">
+      <h3><code>onpar learn basics</code> · for anyone</h3>
+      <ol>
+        <li><a href="docs/#edu-why">What a model is in bytes</a></li>
+        <li><a href="docs/#edu-why">What context costs</a></li>
+        <li><a href="docs/#edu-why">Weights + KV + overhead vs usable memory</a></li>
+        <li><a href="docs/#edu-why">Why tok/s is memory bandwidth</a></li>
+        <li><a href="docs/#edu-why">What quantisation buys and costs</a></li>
+        <li><a href="docs/#edu-why">Why MoE is sized on total params</a></li>
+        <li><a href="docs/#edu-why">What "proven on par" means</a></li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3><code>onpar learn intermediate</code> · for engineers</h3>
+      <ol>
+        <li><a href="docs/#edu-why">GQA vs MHA and kv_heads</a></li>
+        <li><a href="docs/#edu-why">MLA and kv_lora_rank</a></li>
+        <li><a href="docs/#edu-why">Concurrency and the KV budget</a></li>
+        <li><a href="docs/#edu-why">Prefix caching and agent loops</a></li>
+        <li><a href="docs/#edu-why">Speculative decoding and high-batch limits</a></li>
+        <li><a href="docs/#edu-why">Chunked prefill: TTFT vs ITL budgets</a></li>
+        <li><a href="docs/#edu-why">Tool calling as a server problem</a></li>
+        <li><a href="docs/#edu-why">Teacher-forced step replay and judge intervals</a></li>
+      </ol>
+    </div>
+  </div>
 
   <div class="gallery">
     <figure>
@@ -758,41 +959,6 @@
   </div>
 </div></section>
 
-<section id="telemetry"><div class="wrap rise">
-  <p class="eyebrow">What the dashboard won't tell you</p>
-  <h2>Telemetry that grades the plan<br>that produced&nbsp;it.</h2>
-  <p class="sub">A planner emits a config on assumptions. Then nobody checks. onpar reports
-    only the predictions your deployment <em>falsified</em>.</p>
-
-  <div class="term" style="margin-top:34px">
-    <div class="termbar">
-      <i class="tl" style="background:#fb7185"></i><i class="tl" style="background:#fbbf24"></i>
-      <i class="tl" style="background:#34d399"></i>
-      <span class="termtitle">onpar — engine, right now</span>
-    </div>
-<pre>  candidate-local   <span class="r">KV near full — scheduler is preempting</span>
-  KV cache   <span class="r">████████████████████████░░</span>  <span class="u">94%</span>
-  prefill    <span class="k">██████░░░░░░░░░░░░░░░░░░░░</span>  <span class="u">25%</span>  <span class="c">decode-bound — tune bandwidth</span>
-
-  running <span class="u">14</span>  waiting <span class="u">6</span>  queued <span class="u">60ms</span>  TTFT <span class="u">210ms</span>  e2e <span class="u">640ms</span>
-  prefix hits <span class="u">62%</span>  draft accepted <span class="u">41%</span>  truncated <span class="u">12%</span>  abandoned <span class="u">3%</span>
-
-  <span class="w">THE DEPLOYMENT DISAGREES WITH THE PLAN</span>
-  <span class="w">│</span> speculative decoding was enabled assuming idle compute, but only
-  <span class="w">│</span> <span class="u">41%</span> of drafted tokens are accepted. Below ~60% the draft pass costs
-  <span class="w">│</span> more than it returns — turn it off or change the drafter.
-  <span class="w">│</span> <span class="u">12%</span> of completions stop at the token limit rather than finishing.
-  <span class="w">│</span> That reads as a quality problem and is almost always max_tokens.
-  <span class="w">│</span> the card is at <span class="u">98%</span> memory but the engine's KV cache is only at <span class="u">60%</span>.
-  <span class="w">│</span> Roughly 38% is held by another process — engine telemetry alone
-  <span class="w">│</span> cannot show you this.
-</pre>
-  </div>
-  <p class="sub" style="margin-top:22px">Every field is optional and renders as <code>—</code>
-    when unreadable. A KV utilisation of "0%" reads as <em>plenty of headroom</em>, which is
-    the exact opposite of <em>we could not tell</em>.</p>
-</div></section>
-
 <section id="install"><div class="wrap rise">
   <p class="eyebrow">No login, no tokens, no account</p>
   <h2>Try it in ten seconds.</h2>
@@ -815,30 +981,6 @@
     still <code>onpar</code>, and <code>npx onpar-cli</code> works. There is no Homebrew tab
     because there is no onpar formula in the tap; a tab advertising one would be the
     same defect as before.</p></div>
-
-  <div class="cards" style="margin-bottom:28px">
-    <div class="card">
-      <div class="cardtop"><span class="ico">💬</span><span class="tag ok">no jargon</span></div>
-      <h3>New to all of this</h3>
-      <p>Type <code>onpar</code> and describe what you are building. It asks one question
-        at a time, only when the answer changes the plan, and you leave with a model, a
-        quantisation and the memory it needs.</p>
-    </div>
-    <div class="card">
-      <div class="cardtop"><span class="ico">📐</span><span class="tag ok">your numbers</span></div>
-      <h3>Curious how it works</h3>
-      <p><code>onpar learn basics</code> is fifteen lessons, basics then intermediate, where
-        every figure is computed by the solver for the machine you are on. A 24 GB GPU and a
-        128 GB Mac get different arithmetic and reach different conclusions.</p>
-    </div>
-    <div class="card">
-      <div class="cardtop"><span class="ico">🩺</span><span class="tag ok">the loop</span></div>
-      <h3>An engineer with traffic</h3>
-      <p><code>onpar doctor</code> checks the gateway, the extension and an engine in the order
-        the loop needs them, and prints the next command. Then observe, distill, fit, prove,
-        migrate. Each stage can say no.</p>
-    </div>
-  </div>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-t="uvx">uvx</button>
@@ -894,8 +1036,8 @@ function renderCmds(kind){
     ${note ? `<p class="sub" style="margin:6px 0 0;font-size:13px">${note}</p>` : ''}`).join('');
 }
 renderCmds('uvx');
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === t));
+document.querySelectorAll('.tab[data-t]').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab[data-t]').forEach(x => x.setAttribute('aria-selected', x === t));
   renderCmds(t.dataset.t);
 }));
 document.addEventListener('click', async e => {
