@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 500" width="860" height="500" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Inter,system-ui,sans-serif">
+<title id='t'>Autotune: 12 knobs, three forks, 7 engines</title><desc id='d'>The planner reads 9 requirements, settles 12 engine-neutral knobs through three forks (prefix sharing picks the engine, concurrency decides speculative decoding, the latency budget decides chunked prefill), and spells them as native config for vllm, vllm-tpu, sglang, llm-d, llama.cpp, mlx, ollama.</desc>
+<style>
+:root{--s0:#0e9bbd;--s1:#8b5cf6;--s2:#c2820b;--s3:#e0405f;--bg:#0d1320;--panel:#111a2b;--ink:#eef4ff;--ink2:#9fb0cc;--muted:#63758f;--grid:#1c2534;}
+@media (prefers-color-scheme:light){:root:not([data-theme=dark]){--s0:#0369a1;--s1:#7e22ce;--s2:#b45309;--s3:#15803d;--bg:#fcfcfb;--panel:#f4f4f2;--ink:#0b0b0b;--ink2:#52514e;--muted:#7a7975;--grid:#e3e3e0;}}
+:root[data-theme=light]{--s0:#0369a1;--s1:#7e22ce;--s2:#b45309;--s3:#15803d;--bg:#fcfcfb;--panel:#f4f4f2;--ink:#0b0b0b;--ink2:#52514e;--muted:#7a7975;--grid:#e3e3e0;}
+.t{fill:var(--ink);font-size:15px;font-weight:650}.sub{fill:var(--ink2);font-size:11.5px}.lb{fill:var(--ink2);font-size:11px}.ax{fill:var(--muted);font-size:10.5px}.m{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:10.5px;fill:var(--ink2)}.g{stroke:var(--grid);stroke-width:1}.note{fill:var(--muted);font-size:10.5px;font-style:italic}@keyframes clkpulse{0%,100%{opacity:.45}50%{opacity:1}}@keyframes clkflow{to{stroke-dashoffset:-28}}@keyframes clkpop{0%{opacity:0}3%{opacity:1}92%{opacity:1}100%{opacity:0}}.pulse{animation:clkpulse 2.4s ease-in-out infinite}.flow{animation:clkflow 1.1s linear infinite}.pop{animation:clkpop 6s linear infinite both}@keyframes clkstream{from{transform:translateX(0)}to{transform:translateX(46px)}}@keyframes clklight{0%,12%{opacity:.10}26%,68%{opacity:1}84%,100%{opacity:.10}}.stream{transform-box:fill-box;animation:clkstream 1.15s linear infinite}.light{animation:clklight 3.45s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.pulse,.flow,.pop,.stream,.light{animation:none;opacity:1;transform:none}}
+</style>
+<rect width="860" height="500" fill="var(--bg)"/>
+<text x="28" y="30" class="t">Autotune: 12 knobs, three forks, 7 engines</text>
+<text x="40" y="70" class="t" style="font-size:13px">requirements</text>
+<rect x="40" y="84" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="101" class="m">workload</text>
+<rect x="40" y="118" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="135" class="m">concurrency</text>
+<rect x="40" y="152" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="169" class="m">context</text>
+<rect x="40" y="186" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="203" class="m">ttft_ms</text>
+<rect x="40" y="220" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="237" class="m">itl_ms</text>
+<rect x="40" y="254" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="271" class="m">prefix_sharing</text>
+<rect x="40" y="288" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="305" class="m">structured_output</text>
+<rect x="40" y="322" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="339" class="m">lora</text>
+<rect x="40" y="356" width="150" height="26" rx="6" fill="var(--panel)"/>
+<text x="52" y="373" class="m">tool_calling</text>
+<text x="260" y="70" class="t" style="font-size:13px">knobs, each with its why</text>
+<rect x="260" y="84" width="330" height="50" rx="8" fill="var(--panel)"/>
+<rect x="260" y="84" width="4" height="50" rx="2" fill="var(--s0)" class="pulse" style="animation-delay:0.0s"/>
+<text x="276" y="103" class="lb">1 · prefix sharing ≥ 0.55 picks the engine</text>
+<text x="284" y="124" class="m">prefix_reuse</text>
+<rect x="260" y="146" width="330" height="70" rx="8" fill="var(--panel)"/>
+<rect x="260" y="146" width="4" height="70" rx="2" fill="var(--s1)" class="pulse" style="animation-delay:0.6s"/>
+<text x="276" y="165" class="lb">2 · concurrency > 16 turns drafting off</text>
+<text x="284" y="186" class="m">speculative</text>
+<text x="284" y="206" class="m">max_concurrent</text>
+<rect x="260" y="228" width="330" height="50" rx="8" fill="var(--panel)"/>
+<rect x="260" y="228" width="4" height="50" rx="2" fill="var(--s2)" class="pulse" style="animation-delay:1.2s"/>
+<text x="276" y="247" class="lb">3 · latency budget vs throughput</text>
+<text x="284" y="268" class="m">prefill_chunk</text>
+<rect x="260" y="290" width="330" height="110" rx="8" fill="var(--panel)"/>
+<rect x="260" y="290" width="4" height="110" rx="2" fill="var(--s3)" class="pulse" style="animation-delay:1.8s"/>
+<text x="276" y="309" class="lb">sized by the fit solver, or declared</text>
+<text x="284" y="330" class="m">context_length</text>
+<text x="434" y="330" class="m">memory_fraction</text>
+<text x="284" y="350" class="m">tensor_parallel</text>
+<text x="434" y="350" class="m">structured_output</text>
+<text x="284" y="370" class="m">quantization</text>
+<text x="434" y="370" class="m">kv_cache_dtype</text>
+<text x="284" y="390" class="m">lora_fleet</text>
+<text x="434" y="390" class="m">tool_calling</text>
+<text x="660" y="70" class="t" style="font-size:13px">native config</text>
+<rect x="660" y="84" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="104" class="m">vllm</text>
+<rect x="660" y="126" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="146" class="m">vllm-tpu</text>
+<rect x="660" y="168" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="188" class="m">sglang</text>
+<rect x="660" y="210" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="230" class="m">llm-d</text>
+<rect x="660" y="252" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="272" class="m">llama.cpp</text>
+<rect x="660" y="294" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="314" class="m">mlx</text>
+<rect x="660" y="336" width="160" height="32" rx="6" fill="var(--panel)"/>
+<text x="674" y="356" class="m">ollama</text>
+<path d="M 190 233 C 225 233 225 109 260 109" fill="none" stroke="var(--s0)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 190 233 C 225 233 225 181 260 181" fill="none" stroke="var(--s0)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 190 233 C 225 233 225 253 260 253" fill="none" stroke="var(--s0)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 190 233 C 225 233 225 345 260 345" fill="none" stroke="var(--s0)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 100 660 100" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 142 660 142" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 184 660 184" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 226 660 226" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 268 660 268" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 310 660 310" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<path d="M 590 222 C 625 222 625 352 660 352" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7" class="flow"/>
+<text x="40" y="460" class="note">Every knob carries why; projections are roofline estimates, not measured. A knob an engine cannot express becomes a</text>
+<text x="40" y="476" class="note">plan warning, never a guessed flag.</text>
+</svg>

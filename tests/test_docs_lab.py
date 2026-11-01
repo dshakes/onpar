@@ -2012,6 +2012,27 @@ def test_the_previous_product_name_appears_nowhere():
             text = f.read_text(errors="ignore").lower()
         except OSError:
             continue
-        if old in text:
+        # Tags stripped too: the docs nav rendered the name split across a <b>,
+        # which the plain substring check never saw.
+        if old in text or old in re.sub(r"<[^>]+>", "", text):
             hits.append(str(f.relative_to(root)))
     assert not hits, f"the previous product name still appears in: {hits}"
+
+
+@pytest.mark.parametrize("page", [Path("site/index.html"), Path("site/docs/index.html")])
+def test_every_internal_anchor_on_the_site_resolves(page):
+    """A nav link to a section that moved is a dead end on the one page that is
+    meant to sell the product. `#foo` must name an id on the same page, and
+    `docs/#foo` from the landing page must name an id on the docs page."""
+    root = Path(__file__).resolve().parents[1]
+    html = (root / page).read_text()
+    ids = set(re.findall(r'\bid="([^"]+)"', html))
+    docs_ids = set(re.findall(r'\bid="([^"]+)"', (root / "site/docs/index.html").read_text()))
+    dead = []
+    for href in re.findall(r'href="([^"]+)"', html):
+        if href.startswith("#") and href != "#":
+            if href[1:] not in ids:
+                dead.append(href)
+        elif href.startswith("docs/#") and href[6:] not in docs_ids:
+            dead.append(href)
+    assert not dead, f"{page}: links to anchors that do not exist: {sorted(set(dead))}"

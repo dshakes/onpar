@@ -4,87 +4,69 @@
 
 # Is the open model<br>on par?
 
-### Proves whether an open-weight model matches the closed model you pay for — on your own traffic, on hardware you own — then moves you across with a gate and a rollback. Every number carries its interval, and a cell with too little evidence prints `?`.
-
-```bash
-onpar run qwen3-30b-a3b
-```
-
-**Behind that one line: the KV cache sized without getting MoE, GQA or MLA
-wrong; the right engine of seven chosen for the silicon you actually have; the
-two dozen flags that matter set correctly; the weights resolved to a repo
-confirmed to exist. You get an OpenAI-compatible endpoint and you never opened
-an editor. When you need to know it is good enough — not on someone's
-leaderboard, on your own captured requests — that is one more command, and it
-answers per cluster with confidence intervals instead of a shrug.**
+**onpar proves which open-weight model can replace your closed-model API, on your own traffic and hardware, then moves you across with a quality gate and a rollback.**
 
 [![status](https://img.shields.io/badge/status-beta-22d3ee?style=flat-square)](docs/50-roadmap.md)
-[![tests](https://img.shields.io/badge/tests-2527-34d399?style=flat-square)](#verification)
+[![tests](https://img.shields.io/badge/tests-2529-34d399?style=flat-square)](#verification)
 [![license](https://img.shields.io/badge/license-Apache--2.0-a78bfa?style=flat-square)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-read-fbbf24?style=flat-square)](https://dshakes.github.io/onpar/docs/)
 
-**[Site](https://dshakes.github.io/onpar/) · [Docs](https://dshakes.github.io/onpar/docs/) · [Agent-first](#agent-first-by-construction) · [Why](#why-this-exists) · [Quickstart](#try-it-in-ten-seconds) · [Roadmap](docs/50-roadmap.md)**
+**[Website](https://dshakes.github.io/onpar/) &nbsp;·&nbsp; [Docs](https://dshakes.github.io/onpar/docs/) &nbsp;·&nbsp; [Try it in ten seconds](#try-it-in-ten-seconds)**
 
 </div>
 
-**Who it is for.** A team paying a closed-model API that suspects an open model
-would do, and cannot prove it. Engineers get the arithmetic, the receipts and
-the serving config. Everyone else gets a conversation: run `onpar` with no
-arguments and describe what you are building, and `onpar learn` teaches the
-inference basics using the numbers of the machine you are sitting at.
-
-| if you are… | start with | you get |
+| if you are… | run | you get |
 |---|---|---|
-| **new to all of this** | `onpar` | a conversation: say what you are building, answer one question at a time, walk away with a model, a quantisation and the memory it needs |
-| **curious how it works** | `onpar learn basics` | fifteen lessons where every figure is computed for the machine you are on, basics then intermediate |
-| **an engineer with traffic** | `onpar doctor` | the loop: observe, distill, fit, prove, migrate, each stage able to say no |
-| **an agent** | `onpar-mcp` | eleven read-only tools, including `onpar_learn`; none can move production traffic |
+| **new to all of this** | `onpar` | a conversation. Say what you are building. It asks one question at a time, only when the answer changes the plan, and ends with a model, a quantisation and the memory it needs. |
+| **curious how it works** | `onpar learn basics` | fifteen lessons, basics then intermediate. Every figure is computed by the solver for the machine you are sitting at. |
+| **an engineer with traffic** | `onpar doctor` | a check of the gateway, the extension and the engine, then the next command to run. |
+| **an agent** | `onpar-mcp` | eleven read-only tools. None of them can move production traffic. |
 
-**What is different.**
+## Why now
 
-- **Your traffic is the benchmark.** A local proxy captures real requests,
-  redacted before they touch disk, across the OpenAI chat, OpenAI Responses and
-  Anthropic Messages APIs. Nothing leaves the machine.
-- **Agent steps are replayed faithfully.** Each captured step goes back to the
-  candidate with the full conversation, tool schemas and tool results the
-  incumbent saw. Whole sessions are replayed from the recording. Decision
-  agreement is chance-corrected.
-- **A verdict is a receipt, not a dashboard.** Wilson intervals per task, the
-  judge disclosed and measured for position and length bias, a signed local
-  file that re-verifies, and the regret set printed first.
-- **The hardware answer is exact.** MoE, GQA and MLA sizing done right, the
-  engine chosen for your silicon, native config emitted with the tool-calling
-  parser the model family needs. No wrapper to keep running.
+Open-weight models are cheap to run, and the gap to closed models is real but task-dependent. On Terminal-Bench 2.0 the best open model scores 67.9 against GPT-5.5's 82.7, self-reported, as of 31 Oct 2026. That is an average. Your four tasks are not the average.
 
-| | measured, not claimed |
-|---|---|
-| gateway overhead | **+0.07 ms** added p95 with capture on, against a 15 ms budget; the same test proves it detects 25 ms of injected delay |
-| capture at rest | redacted *then* encrypted; a redaction failure drops the record rather than writing it |
-| verdicts | per-task Wilson intervals; a task moves only when the whole interval clears the bar |
-| cutover | nothing moves production traffic except shadow mode; the MCP surface has no verb that can, and adding one fails the build |
+The plumbing caught up. As of 31 Oct 2026, vLLM 0.32 and llama.cpp 0.8 serve the Anthropic `/v1/messages` endpoint, and OpenAI's hosted Evals shut down on 30 Nov 2026. Two questions still stop every migration: **will it run here**, and **is it good enough for our traffic**. onpar answers both on your machine and prints the arithmetic.
 
-## The problem
+## Prove it
 
-Your team pays a closed-model API. An open model would cost a fraction of
-that, and the quality gap has closed — roughly 17.5 points of MMLU between
-the best closed and best open model at the end of 2023, effectively zero on
-knowledge benchmarks by 2026, with cost still running 6–62x apart.
+Your captured traffic is the benchmark. The verdict is a receipt, not a dashboard.
 
-So why is anyone still paying? Two questions nobody can answer for you:
+- **Agent steps, replayed faithfully.** Each step goes back to the candidate teacher-forced, with the tool schemas and results the incumbent saw. Tool arguments are schema-validated and decision agreement is Cohen's κ ([ADR-0020](docs/adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+- **Intervals, never bare scores.** Per-task Wilson intervals. A task is proven only when its whole interval clears the bar, and thin evidence prints `?`.
+- **The judge is disclosed and measured.** Position bias, length bias and the human-agreement rate from blind `onpar label` appear in every report. A judge alone never promotes.
+- **Money as a range.** The saving carries the same interval as the evidence behind it.
 
-1. **Will it even run on our hardware?** Between "the weights are on Hugging
-   Face" and "it is serving" sits a specialist skill: KV cache arithmetic
-   that goes wrong three separate ways, seven engines with incompatible flag
-   dialects, quantisation that means something different on MLX than on vLLM,
-   and memory maths that must saturate rather than silently wrap.
-2. **Is it good enough for *our* traffic?** Benchmarks are someone else's
-   exam. The model that tops MMLU may fail your extraction schema, and the
-   one ranked fortieth may be perfect at your four tasks.
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/agentic-replay.svg" alt="Step replay: the candidate gets the system prompt, every prior turn, the tool results and the tool schemas the incumbent had, and is graded on the one move it makes. A whole session replays from the recording and stops at the first call the recording cannot answer."></td>
+<td width="50%"><img src="docs/assets/receipt-anatomy.svg" alt="Receipt: the file leads with what must stay on the incumbent, then what is unproven, then what is proven above the bar. Every number carries an interval, and every field derives from the counts, so a forged copy contradicts itself."></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/money-range.svg" alt="Money: the same migration costed at 4,000, 400 and 40 captured requests. The $2,847 and $317 rates never change, but the dollar range widens as the sample shrinks."></td>
+<td width="50%"><img src="docs/assets/chain-real-run.svg" alt="A real run: fifteen requests pass the gateway, the log on disk holds no readable prompt text, and two task shapes become fifteen eval items. Every item matches the incumbent, and the verdict still moves zero percent, because fifteen items cannot clear a ninety percent bar."></td>
+</tr>
+</table>
 
-onpar answers both — on your hardware, on your traffic — and prints the
-arithmetic so you can check it rather than trust it.
+## Run it
 
-<img src="docs/assets/gap-map.svg" alt="Bar chart: tools that solve each of six migration steps. Deployment has six; hardware fit has one; four steps have none." width="100%">
+The other half: what runs on your hardware, configured the way an expert would.
+
+- **Sizing done right.** MoE on total params, GQA on `kv_heads`, MLA on `kv_lora_rank`. Fit calculators get all three wrong.
+- **The engine of seven for your silicon.** There are seven engines with adapters today: vLLM, vLLM-TPU, SGLang, llm-d, llama.cpp, MLX and Ollama. The output is a real `vllm serve` or `InferencePool` that runs with onpar uninstalled.
+- **Twelve knobs, each with its why.** Context length, concurrency, chunked prefill, prefix reuse, speculative decoding, memory fraction, tensor parallel, structured output, quantisation (fp16 to q3), KV-cache dtype, LoRA fleet and the tool-calling parser. Projections are a roofline estimate, not measured.
+- **One artifact, any machine.** It runs as packed, re-solves with the changes reported, or refuses.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/autotune.svg" alt="Autotune: your workload goes in and twelve knobs come out, each with its reason. A prefix share of 0.55 or more picks the engine, more than 16 concurrent turns drafting off, and an unreachable latency budget becomes a plan warning, never a guessed flag."></td>
+<td width="50%"><img src="docs/assets/sizing-three-ways.svg" alt="Three sizing errors: MoE sized on active parameters understates memory ninefold and says a model fits when it does not. GQA counted on attention heads overstates fourfold, and MLA sized with the GQA formula overstates sixty-fourfold."></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/agent-surface.svg" alt="Agent surface: eleven read-only tools, receipts and eval sets as resources, and three workflow prompts. Below them, the verbs that move production traffic sit behind a red line, absent by construction: there is no such tool to call."></td>
+<td width="50%"><img src="docs/assets/in-a-box.svg" alt="One artifact lands on three machines. The first runs it as packed, the second re-solves it and reports what changed, and the third refuses because it does not fit."></td>
+</tr>
+</table>
 
 ## Try it in ten seconds
 
@@ -92,8 +74,7 @@ arithmetic so you can check it rather than trust it.
 uvx --from onpar onpar fit
 ```
 
-No install, no config file, no account, no telemetry. It reads the machine
-it is running on and tells you what fits:
+No install, no config, no account, no telemetry. It reads the machine and tells you what fits:
 
 ```
 
@@ -129,188 +110,11 @@ it is running on and tells you what fits:
   onpar fit --explain <model-id>   # show the arithmetic
 ```
 
-Every number carries its arithmetic. `onpar fit --explain <model-id>`
-shows the derivation for any row — weights, KV, overhead, headroom.
+`onpar fit --explain <model-id>` prints the derivation for any row. When one looks right, `onpar run qwen3-30b-a3b` serves it.
 
-### Learn
+## Run your own proof
 
-```bash
-onpar learn            # list the two tracks
-onpar learn basics     # 7 lessons: weights → KV → bandwidth → quantization → MoE → Wilson
-onpar learn basics 3   # one lesson, jump straight to weights + KV + overhead totals
-onpar learn intermediate  # 8 lessons: GQA · MLA · concurrency · prefix caching · speculative decoding
-```
-
-Every figure is computed by the same solver that powers `onpar fit`, so the
-numbers in the lesson are the numbers of this machine — not textbook examples.
-The curriculum has no fixed values; a lesson on a 128 GB Mac and one on a 24 GB
-GPU show different arithmetic and reach different conclusions.
-
-### Ask it in English instead
-
-Run `onpar` bare and describe what you are building. It asks a question
-only when the answer would change the plan, and in a script or a CI step the
-same invocation stays a usage error rather than waiting on input:
-
-<img src="docs/assets/conversation.gif" alt="A real recording of a bare onpar session: the user describes a support chatbot for 20 agents, the tool answers with model, quantisation and memory, shows which inference came from which words, states its assumptions, and asks one follow-up question. The user answers 32k token prompts and the context is understood with its provenance." width="100%">
-
-## The three ways sizing goes wrong
-
-This is the arithmetic the tool exists to get right, and all three errors
-are common in the wild:
-
-<img src="docs/assets/sizing-three-ways.svg" alt="Three ways KV cache sizing goes wrong. Mixture-of-experts sizing on active parameters instead of total understates memory ninefold, in the dangerous direction that says a model fits when it does not. Grouped-query attention counted with attention heads instead of key-value heads overstates fourfold. Multi-head latent attention sized with the grouped-query formula overstates sixty-fourfold. The last two waste money; the first causes an out-of-memory crash." width="100%">
-
-- **MoE** sizes on *total* parameters. Kimi K3 activates 50B of 2.8T per
-  token, so people assume it needs 50B resident. All 2.8T must be. Sparsity
-  cuts compute, not memory.
-- **GQA** uses `kv_heads`, not attention heads — up to an 8× overestimate.
-  The model fits; the naive tool says it does not.
-- **MLA** (DeepSeek family) stores one compressed latent, not per-head K/V.
-  Applying the GQA formula overestimates KV by ~50×.
-
-And one that costs money in the other direction: **speculative decoding
-turns negative past batch ~32.** EAGLE-3's headline "2–3×" is a
-single-stream figure.
-
-## Then: is it good enough for your traffic?
-
-Sizing tells you what *runs*. The harder question is whether it is good
-enough — and that is answered on your own captured requests, per task,
-against the closed model you use today:
-
-```
-                    Arithmetic  Ticket classific  Structured extra  One-line summari
-llama-3.1-8b      98% [87–100]       90% [77–96]     100% [91–100]      98% [91–100]
-gpt-4o-mini               100%              100%              100%              100%
-```
-
-Every cell is a Wilson score interval, and a task counts as proven only when
-its **whole interval** clears the bar — so a small sample cannot promote
-itself by getting lucky. At a perfect score you need 35 flawless items to
-clear 90%, and no fewer, however clean 12 looks. A cell with too little
-evidence prints `?` rather than a fabricated score, and the judge model and
-human-agreement rate are disclosed in every report.
-
-**Where the candidate loses is printed first.** The honest failure is what
-makes the wins credible.
-
-<img src="docs/assets/e2e.svg" alt="End-to-end: request path through the gateway and the control loop that decides what it may hit" width="100%">
-
-### The eval suite, and why it refuses more than it reports
-
-Evals are the half of this product that decides whether you move at all, so
-they are built to disappoint you honestly:
-
-- **Your traffic, not a benchmark.** Eval items are distilled from captured
-  requests and clustered into task shapes. A model is scored on the work you
-  actually send, per shape, because a model that is excellent at one of your
-  tasks and useless at another must not be averaged into "fine".
-- **Confidence intervals, never bare scores.** Wilson intervals throughout.
-  A task is proven only when its whole interval clears the bar.
-- **`?` beats a fabricated number.** Too little evidence prints `?`. Never a
-  number the sample cannot support.
-- **The judge is disclosed.** Judge model and human-agreement rate appear in
-  every report — an unlabelled judge is an unfalsifiable claim.
-- **Failures are cached as failures.** `--resume` re-buys only what is
-  missing; an item that failed is an item to retry, never a cached success.
-- **A judge alone never promotes.** Nothing authorises a cutover except
-  shadow mode against live traffic.
-- **The judge is measured, not just named.** Position bias (swap the answers,
-  see if the verdict follows the slot), length bias (did the longer answer win
-  more often than a coin flip, over enough decisions to say), and calibration
-  against the deterministic graders are all computed from the run itself. The
-  human-agreement rate is produced by `onpar label` — a blind A/B sitting over
-  the exact comparisons the judge saw — rather than typed into a flag.
-
-### Agentic workloads: the step is the unit
-
-Most traffic worth migrating in 2026 is an agent loop — one request per step,
-each a strict extension of the last, most of them tool calls. onpar replays
-each captured step **with everything the incumbent saw** — system prompt,
-prior turns, tool results, tool schemas, output format — and grades the one
-move the candidate makes. That is teacher-forced per-step evaluation, the
-protocol agent benchmarks use, and the only honest replay for a tool that does
-not run your tools ([ADR-0020](docs/adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
-
-<img src="docs/assets/agentic-replay.svg" alt="Agentic evals: the step is the unit. Left: one captured step replayed teacher-forced — the candidate receives the system prompt, every prior turn, the tool results and the tool schemas the incumbent had, and is graded on the one move it makes. Right: a whole session replayed from the recording, stopping at the first call the recording cannot answer." width="100%">
-
-```
-AGENTIC — did the candidate make the same moves?
-  decision agreement 71% [36–92] ⚠ over 7 tool-context steps · κ=0.53 (moderate), chance-corrected
-  1 steps the candidate wrote text where the incumbent called a tool · 1 steps it called a tool where the incumbent answered
-  per tool, how often the candidate also called it:
-    refund                       67% [21–94] ⚠ of 3 · candidate called it 1× unprompted
-    lookup                      100% [21–100] ⚠ of 1
-```
-
-- **Decision agreement is chance-corrected.** Cohen's κ over the per-step
-  action (tool called, or `respond`), because raw agreement flatters a workload
-  where one action dominates. The two asymmetric failures are counted apart: a
-  model that writes prose where the incumbent refunded, and one that refunds
-  where the incumbent asked a question.
-- **Arguments are validated against the schema the request offered.** Wrong
-  type, missing required field, value outside the enum, a key the schema does
-  not declare, arguments that are not JSON, a tool that was never offered — all
-  deterministic, all before any judge is consulted. This is the commonest way an
-  open model fails an agentic task and it needs no LLM to see.
-- **Sessions are recovered from the log, structurally.** `onpar distill` links
-  steps whose messages are prefixes of one another into agent sessions, reports
-  how agentic the corpus is, and measures the share of prompt tokens that were a
-  re-sent prefix — the number that decides whether prefix reuse is worth turning
-  on, handed straight to the planner (`onpar build --prefix-sharing 0.49`) so
-  the engine config (vLLM `--enable-prefix-caching`, SGLang's radix cache) is
-  sized from your traffic, not a guess.
-- **The serving config knows the model calls tools.** With the wrong or
-  missing parser an engine returns the model's tool call as plain text, and
-  the suite flags it as `tool-leak` — a server fault that reads like a model
-  fault. `onpar build --tool-calling` emits the parser the model family needs
-  (vLLM `--enable-auto-tool-choice --tool-call-parser …`, SGLang's parser
-  names, llama.cpp `--jinja`), every flag cited to current docs, and a family
-  it cannot cite is reported as unsupported rather than guessed.
-- **Traces you already have.** `onpar distill --import traces.jsonl` reads a
-  Langfuse generations export or plain OpenAI request/response pairs (and
-  Anthropic-shaped records) into the same eval set, redacting on the way in
-  with the compiled extension and refusing without it unless you say
-  `--unredacted`. Kitaru's export format could not be verified, so it is not
-  claimed.
-- **Whole sessions, replayed from the recording.** `onpar prove
-  --replay-sessions` walks each multi-step agent session end to end: the
-  candidate's own turns are kept, its tool calls are answered with the tool
-  results the incumbent actually received, and the moment it calls something
-  the recording cannot answer the session stops — a miss is a stop, never a
-  live tool call. Reported as the share of sessions that followed the
-  incumbent's path to the end, with its interval.
-- **What it does not do:** execute your tools. A candidate that reaches the
-  same outcome by a different route reads as diverged, and the report says so
-  rather than claiming "task success".
-
-## What it costs, and how sure you can be
-
-The same migration, costed three times at different evidence levels — the
-interval narrows as the sample grows, and the saving is stated with it:
-
-<img src="docs/assets/money-range.svg" alt="The same migration costed three times, at 4,000, 400 and 40 captured requests. The incumbent costs $2,847 a month and the candidate $317, and those rates never change. The dollar range widens as the sample shrinks, because the share of traffic that moves was measured rather than assumed. Less evidence is a wider claim, not a rounder number." width="100%"> Without a rate, a capture
-
-Give it what the incumbent costs and it prices the migration — with the
-saving stated as a range, because the evidence is a range:
-
-```bash
-onpar prove evalset.json --incumbent-cost 2847 --candidate-cost 317 \
-    --traffic-window '14 days'
-
-  Saving: $2,506–$2,530/mo (~89%) on traffic proven at or above the 90% bar
-    100% [99–100] of traffic moved, measured on 400 captured requests
-    over 14 days; Wilson score, 95%
-```
-
-## The whole loop, on one machine
-
-Everything above is one chain, and it runs on a laptop. This is a real run:
-
-<img src="docs/assets/chain-real-run.svg" alt="One real run of the whole chain on a single laptop. Fifteen requests pass through the capture gateway to an upstream provider; the log on disk holds no readable prompt text; the distiller finds two task shapes and writes fifteen eval items with the traffic shares eighty and twenty percent; and the prover, with every single item matching the incumbent exactly, still returns move zero percent — because fifteen items cannot clear a ninety percent bar. The verdict refusing to promote a perfect score is the system working, not failing." width="100%">
-
-Capture starts with an explicit command, in your request path, until Ctrl-C:
+**1. Observe.** Capture starts with an explicit command and stops at Ctrl-C:
 
 ```bash
 onpar observe --upstream https://api.openai.com/v1
@@ -322,44 +126,43 @@ onpar observe --upstream https://api.openai.com/v1
   point your base_url at http://127.0.0.1:8787/v1 and nothing else changes.
 ```
 
-It speaks all three API shapes agent frameworks use — OpenAI chat completions,
-the OpenAI Responses API and the Anthropic Messages API — and captures each as
-the same record, so a Claude-SDK agent and an OpenAI-SDK agent are proven the
-same way.
+The Rust gateway captures OpenAI chat, OpenAI Responses and Anthropic Messages as one record. It adds **+0.07 ms** at p95 against a 15 ms budget, measured. Redaction runs before persistence and fails closed, records are encrypted with XChaCha20-Poly1305, and nothing leaves the machine.
 
-Redaction runs *inside* the write path, so there is no code path that
-appends a record which skipped it — and a redaction failure drops the
-capture rather than writing it. Zero telemetry and zero egress by default:
-captured traffic is the most sensitive data a customer has, so export is an
-explicit command, never a background sync.
+**2. Distill, fit, prove.** `onpar distill` clusters captures into task shapes, `onpar fit` sizes the candidates, and `onpar prove` scores them per task:
 
-Nothing authorises a cutover except shadow mode. An LLM judge alone never
-moves production traffic.
+```
+                    Arithmetic  Ticket classific  Structured extra  One-line summari
+llama-3.1-8b      98% [87–100]       90% [77–96]     100% [91–100]      98% [91–100]
+gpt-4o-mini               100%              100%              100%              100%
+```
 
-### The receipt
+Agent traffic is scored step by step, with tool-leak detection and whole-session replay from the recording. A miss stops the session. It never makes a live tool call.
 
-A proof you cannot audit is a rumour. Every verdict emits a receipt — what
-was compared, on how much evidence, under which judge, and what would
-invalidate it:
+```
+AGENTIC — did the candidate make the same moves?
+  decision agreement 71% [36–92] ⚠ over 7 tool-context steps · κ=0.53 (moderate), chance-corrected
+  1 steps the candidate wrote text where the incumbent called a tool · 1 steps it called a tool where the incumbent answered
+  per tool, how often the candidate also called it:
+    refund                       67% [21–94] ⚠ of 3 · candidate called it 1× unprompted
+    lookup                      100% [21–100] ⚠ of 1
+```
 
-<img src="docs/assets/receipt-anatomy.svg" alt="Anatomy of a migration receipt. A file, not a dashboard: it leads with what must stay on the incumbent model, then what is not proven either way, then what is proven above the bar, and ends with the movable share, the coverage gaps, and which judge was used. Four properties make it defensible: the bad news is printed first, every number carries a confidence interval, the eval set is identified by digest so the questions can be re-asked, and every field is derived from the counts so a forged copy contradicts itself." width="100%">
+Give it what the incumbent costs and it prices the move:
 
-A receipt goes stale on its own terms: `onpar guard` voids it when the
-model fingerprint changes behind its name, or when traffic drifts into
-shapes that were never scored.
+```bash
+onpar prove evalset.json --incumbent-cost 2847 --candidate-cost 317 \
+    --traffic-window '14 days'
 
-<img src="docs/assets/brief-anatomy.svg" alt="The five blocks of a migration briefing, in the order they are read: what must stay on the incumbent model, what is not proven either way, what is safe to move, what it saves, and the receipt's own JSON so the page need not be trusted. The order is the argument — a document built to persuade would put the good news first." width="100%">
+  Saving: $2,506–$2,530/mo (~89%) on traffic proven at or above the 90% bar
+    100% [99–100] of traffic moved, measured on 400 captured requests
+    over 14 days; Wilson score, 95%
+```
 
-### Resume, because a killed run should not be bought twice
+**3. Migrate and guard.** `onpar migrate` walks the gate. Nothing moves production traffic except shadow mode. `onpar guard` voids the receipt when the model changes behind its name or traffic drifts into shapes never scored.
 
-<img src="docs/assets/resume-ledger.svg" alt="Three bars comparing a killed collection run. The first run reaches 380 of 400 replies before being killed. Without --resume, a second run buys all 400 again. With --resume, it buys only the missing 20. A failure is never cached, because an item that failed is an item to retry." width="100%">
+## Use it from an agent
 
-## Agent-first, by construction
-
-The same engine is a CLI, an MCP server, a Python SDK and a workbench —
-one core, four surfaces, no wrapper around a subprocess:
-
-<img src="docs/assets/agent-surface.svg" alt="What an agent can reach over MCP: eleven read-only tools, receipts and eval sets as resources confined to one eval root, and three pre-built workflow prompts. Below them, a dashed red boundary containing the verbs that move production traffic — cutover, deploy, route, promote — marked absent by construction rather than by policy: there is no such tool to call." width="100%">
+One core, four surfaces: CLI, MCP server, Python SDK and workbench. An agent gets the same answer you do.
 
 ```jsonc
 // onpar-mcp — JSON-RPC over stdio, zero dependencies
@@ -376,43 +179,28 @@ onpar_guard     // does that proof still hold — and if not, which of three way
 onpar_learn     // inference curriculum grounded in this machine's numbers
 ```
 
-No tool in that registry can move production traffic, and adding one fails
-the build. The vocabulary is deliberately broad: the failure it guards
-against is an agent promoting a model because a helpful-looking
-`onpar_promote` existed and nothing objected.
+No tool in that registry can move production traffic, and adding one fails the build.
 
-## What runs today
+## Where it sits
 
-Pre-alpha, and honest about which parts are real:
+Every layer has a good incumbent. The gap is the seam between them. As of 31 Oct 2026:
 
-<img src="docs/assets/in-a-box.svg" alt="One artifact landing on three machines and producing three outcomes: run as packed, re-solved with the changes reported, or refused" width="100%">
+<img src="docs/assets/landscape-2026.svg" alt="Where onpar sits on 31 Oct 2026: six capabilities across five tools. Kitaru replays sessions, Langfuse runs experiments on traces, Braintrust is closed and hosted, promptfoo scores outputs and LiteLLM is a gateway with no quality judgement. Only onpar covers the whole path from capture to a cutover gate with rollback." width="100%">
 
-Full acceptance criteria and risk gates: **[implementation plan](docs/80-implementation-plan.md)**.
+| | capture | replay | stats verdict | sizing | native config | cutover gate |
+|---|---|---|---|---|---|---|
+| Kitaru | SDK or trace import | sessions, tools from the recording | — | — | — | regression cohorts |
+| Langfuse | SDK traces | experiments on prod traces | — | — | — | CI action |
+| Braintrust | hosted traces | trace to experiment | — | — | — | — |
+| promptfoo | — | output-level | — | — | — | — |
+| LiteLLM | proxy | — | — | — | — | — |
+| **onpar** | **redacting proxy** | **teacher-forced steps and sessions** | **Wilson, `?`, signed receipt** | **MoE, GQA, MLA** | **seven engines** | **shadow mode only** |
+
+A dash means the capability was not found in that review. Sources: [10 — Landscape](docs/10-landscape.md).
 
 ## What it is not
 
-**Not a load balancer.** Not an inference engine, not a chat UI, not a RAG
-framework, not hosted inference. Those have incumbents and none of them is
-the gap.
-
-The gateway is in your request path only while you are migrating, and not
-after — reasoning in
-[ADR-0015](docs/adr/0015-in-the-path-only-while-migrating.md).
-
-Generated config is **native and standalone** — a real `vllm serve` or a
-real `InferencePool` that runs with onpar uninstalled. Never a wrapper.
-
-## Why this exists
-
-<img src="docs/assets/edu-silicon.svg" alt="An H100 die with 132 SM squares, one lit, fed by a memory bus carrying all 32.8 GB of weights for every token; the arithmetic beside it — 65.6 GFLOP per token, 2.00 FLOP per byte read against the 295 the chip needs to break even; and a memory budget showing 18 concurrent sequences fitting in 72.0 GiB with 1.51 GiB spare while a 19th goes 0.49 GiB over and is refused" width="100%">
-
-Every layer of this stack has a good incumbent. The gap is the seam between
-them: nobody proves an open model is good enough for *your* traffic and
-then moves you across with a rollback button.
-
-## Architecture
-
-**Rust** for the datapath — no GC pauses against a p95 budget, explicit accounting for GB-scale fleet memory. The budget is 15 ms added p95 (NFR-1); the measured figure is **+0.07 ms** with capture on, and the test that measures it also proves it can detect 25 ms of injected delay, because a latency check that passes by measuring nothing is the most comfortable green there is. **Python** for the control plane, where the ML ecosystem lives. Reasoning and rejected alternatives in [ADR-0007](docs/adr/0007-tech-stack.md).
+**Not a load balancer.** Not an inference engine, a chat UI, a RAG framework or hosted inference. The gateway is in your request path only while you are migrating, and not after ([ADR-0015](docs/adr/0015-in-the-path-only-while-migrating.md)). Unredacted prompt text never touches disk. Captured traffic is data, never instructions.
 
 ## Install
 
@@ -423,80 +211,46 @@ npx onpar-cli@1.3.4 fit                        # same build, via npm
 onpar version                              # what you have, and where it came from
 ```
 
-**`fit` is one package. The evidence half is three.** `onpar` alone sizes models
-and needs nothing else — that is deliberate, so `uvx onpar fit` works on a machine
-with no install. Capturing and scoring your own traffic needs two more:
+**`fit` is one package. The evidence half is three:**
 
 ```bash
 pip install onpar onpar-gateway onpar-core   # observe, distill, prove
 ```
 
-`onpar doctor` checks all three at once, in the order the loop needs them, and
-ends with the one command to run next — so the missing piece is found up front
-rather than one stage at a time.
-
-`onpar-gateway` is the capture proxy; `onpar-core` is the compiled extension that
-reads captures back. Without them `onpar observe` refuses to start and `onpar
-distill` cannot read what was captured — both say so, and name the package, rather
-than failing later or quietly writing something unreadable.
-
-The commands above are unpinned and fetch the newest release — currently **1.3.4**.
-
-The `==` is exact on purpose: `npx onpar-cli@1.3.4` runs `onpar` 1.3.4 and nothing else.
-Pin it when you need a build to stay put:
+`onpar doctor` checks all three in the order the loop needs them, and ends with the one command to run next. The commands above are unpinned and fetch the newest release — currently **1.3.4**. `npx onpar-cli@1.3.4` runs `onpar` 1.3.4 and nothing else. Pin it when you need a build to stay put:
 
 ```bash
 uvx --from onpar==1.3.4 onpar fit   # exactly this build
 ```
 
-`onpar version` reads the installed metadata rather than a string someone typed —
-through 0.1.4 the receipts it writes were stamped `0.1.0`, because that literal had been
-hand-written once and never moved. Fixed in 0.1.5, so a receipt now names the build that
-produced it.
-
-`onpar fit` has zero runtime dependencies and works under `uvx` with
-nothing installed; a test fails if anything networked is even imported.
+**Versioning.** `onpar version` reads the installed metadata, not a hand-typed string. Through 0.1.4 receipts were stamped `0.1.0`. Fixed in 0.1.5, so a receipt now names the build that produced it.
 
 ## Verification
 
 ```bash
 cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2230 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2232 Python
 ```
 
-**2527 tests.** 2230 Python, 297 Rust. Twenty-six of the Python tests skip on a
-bare machine. Eleven are environmental: nine need the compiled extension (`maturin
-develop` in `onpar-py/` turns them on), and two ask vLLM and SGLang for their
-own flags, which needs those engines installed. CI runs both inside the engines'
-published images, so neither skip reaches a green tick unasked. The other fifteen
-are the mutation harness reporting honestly that it had nothing to do: those
-modules declare no numeric constant to perturb, so there is nothing to mutate.
-Every module's `demo()` is *run* by a separate test, because that harness used
-to skip when a demo failed — which is how two of them sat broken behind a green
-tick. The Rust core denies `unwrap`/`expect`/`panic!`/slice-indexing at the lint level — a sizing or licence bug must not be a panic. Gateway tests run over **real TCP** against a **real** upstream, because a test that calls the handler directly passes even when the response is buffered.
+**2529 tests.** 2232 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. Every number on this page is recomputed by a test. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
 
-```bash
-cargo test --all                                   # 297 Rust
-cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2230 Python
-```
+## What's in the repo
 
-Every module carries an assert-based `demo()` self-check runnable via
-`python -m onpar.<mod>`. The Rust core denies `unwrap`/`expect`/`panic!`
-and slice-indexing at the lint level — a sizing or licence bug must not be a
-panic — and sizing arithmetic saturates, so an overflowed requirement reads
-as "too big" and refuses rather than wrapping to a small number and
-appearing to fit. Gateway tests run over **real TCP** against a **real**
-upstream, because a test that calls the handler directly passes even when
-the response is buffered.
+| | |
+|---|---|
+| Capture gateway, redaction, encryption, datapath (`onpar-gateway/`, `onpar-core/`) | Rust |
+| Python extension that reads captures (`onpar-py/`) | Rust |
+| Control plane, fit solver, planner, evals, CLI, MCP server (`src/onpar/`) | Python, zero runtime deps for `fit` |
+| Website and docs site (`site/`) | Static HTML and generated SVG |
 
 ## Docs
 
 | | |
 |---|---|
 | [00 — Verdict](docs/00-verdict.md) | Build vs. buy, honestly. |
-| [10 — Landscape](docs/10-landscape.md) | 14 competitors across 4 layers. |
+| [05 — Field guide](docs/05-field-guide.md) | The depth behind this page: sizing, evals, receipts, the architecture. |
+| [10 — Landscape](docs/10-landscape.md) | Who else is in the loop, dated. |
 | [20 — PRD](docs/20-prd.md) | Goals, personas, FR/NFR, epics, risks. |
 | [30 — Architecture](docs/30-architecture.md) | Datapath/control-plane split, grader stack, fit math. |
 | [40 — UX](docs/40-ux.md) | CLI, TUI, console, MCP. |
@@ -505,13 +259,16 @@ the response is buffered.
 | [70 — Naming](docs/70-naming.md) | Why it is called this. |
 | [80 — Plan](docs/80-implementation-plan.md) | M0–M10, acceptance criteria, risk gates. |
 | [90 — CI gating](docs/90-ci-gating.md) | Gate a deploy on a proof that still holds. |
-| [95 — GA readiness](docs/95-ga-readiness.md) | What is ready, what blocks GA, ranked — assessed by running the published packages. |
+| [95 — GA readiness](docs/95-ga-readiness.md) | What blocks GA, ranked, assessed by running the published packages. |
 | [ADRs](docs/adr/) | 20 decisions, including the two later reversed. |
 
-The docs teach the whole inference stack from first principles —
-[start here](https://dshakes.github.io/onpar/docs/#edu-why) if you have
-never sized a KV cache.
+## Learn more
 
-## License
+- Website and docs: [dshakes.github.io/onpar](https://dshakes.github.io/onpar/), with a first-principles curriculum and an interactive memory lab ([start here](https://dshakes.github.io/onpar/docs/#edu-why)). Source in [`site/`](site/).
+- Decisions: [`docs/adr/`](docs/adr/). The depth behind this page: [field guide](docs/05-field-guide.md).
+- Conventions and invariants: [`CLAUDE.md`](CLAUDE.md).
+- Licence: Apache-2.0. See [LICENSE](LICENSE).
 
-Apache-2.0. See [LICENSE](LICENSE).
+---
+
+<sub>*On par* means on equal footing. "Is the open model on par with the one we pay for?" is the question this tool answers, and its reply uses the same words: on par, or off par. More in [70 — Naming](docs/70-naming.md).</sub>

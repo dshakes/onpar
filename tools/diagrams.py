@@ -2050,6 +2050,206 @@ def resume_ledger() -> None:
     save("resume-ledger.svg", p)
 
 
+def landscape_2026() -> None:
+    """Who covers which stage of a migration, as of the 31 Oct 2026 research.
+
+    Every cell traces to the competitive report's "Has / Explicitly not" and
+    "Ranked closest" tables. A cell the report does not support is a no, not a
+    guess; the date is in the title because this is a snapshot that ages.
+    """
+    W, H = 860, 452
+    stages = [
+        ("capture", "proxy"),
+        ("session replay,", "recorded tools"),
+        ("statistical", "verdict, intervals"),
+        ("hardware", "sizing"),
+        ("native", "serving config"),
+        ("cutover gate", "+ rollback"),
+    ]
+    # (product, what it is, cells) — cells follow `stages` order.
+    rows = [
+        ("Kitaru (ZenML)", "replay + model swap", (0, 1, 0, 0, 0, 0)),
+        ("Langfuse", "experiments on traces", (0, 0, 0, 0, 0, 0)),
+        ("Braintrust", "trace to eval, closed, hosted", (0, 0, 0, 0, 0, 0)),
+        ("promptfoo", "output-level evals, CLI", (0, 0, 0, 0, 0, 0)),
+        ("LiteLLM", "gateway, no quality judgement", (1, 0, 0, 0, 0, 0)),
+        ("onpar", "the whole path", (1, 1, 1, 1, 1, 1)),
+    ]
+    p = head(
+        W,
+        H,
+        "Where onpar sits, 31 Oct 2026",
+        "Coverage matrix of six migration stages against five adjacent tools and onpar. "
+        "Kitaru replays recorded sessions; LiteLLM is a capture proxy; Langfuse, "
+        "Braintrust and promptfoo cover none of the six as defined. onpar covers all six.",
+    )
+    x0, cw, y0, rh = 230, 100, 112, 44
+    for j, (a, b) in enumerate(stages):
+        cx = x0 + j * cw + cw / 2
+        p.append(f'<text x="{cx:.0f}" y="66" class="lb" text-anchor="middle">{a}</text>')
+        p.append(f'<text x="{cx:.0f}" y="80" class="ax" text-anchor="middle">{b}</text>')
+    for i, (name, what, cells) in enumerate(rows):
+        y = y0 + i * rh
+        ours = name == "onpar"
+        if ours:
+            # The pulse is the one thing to look at: the only row with no gaps.
+            p.append(
+                f'<rect x="28" y="{y - 4}" width="{W - 56}" height="{rh - 4}" rx="8" '
+                f'fill="var(--panel)" stroke="var(--s0)" stroke-width="1.5" class="pulse"/>'
+            )
+        elif i % 2 == 0:
+            p.append(
+                f'<rect x="28" y="{y - 4}" width="{W - 56}" height="{rh - 4}" rx="8" '
+                f'fill="var(--panel)"/>'
+            )
+        style = ' style="font-size:13px"' if ours else ' style="font-size:12.5px;font-weight:600"'
+        p.append(f'<text x="42" y="{y + 14}" class="t"{style}>{name}</text>')
+        p.append(f'<text x="42" y="{y + 29}" class="ax">{what}</text>')
+        for j, has in enumerate(cells):
+            cx, cy = x0 + j * cw + cw / 2, y + 18
+            if has:
+                # Data stays put; only onpar's marks breathe, in a ripple along
+                # the row. `pop` would hide every check on the first frame, which
+                # is what a thumbnail or a paused renderer shows.
+                anim = f' class="pulse" style="animation-delay:{j * 0.25:.2f}s"' if ours else ""
+                p.append(
+                    f"<g{anim}>"
+                    f'<circle cx="{cx:.0f}" cy="{cy}" r="10" fill="var(--s0)"/>'
+                    f'<path d="M {cx - 4.5:.1f} {cy} l 3 3.2 l 6 -6.4" fill="none" '
+                    f'stroke="var(--bg)" stroke-width="2" stroke-linecap="round" '
+                    f'stroke-linejoin="round"/></g>'
+                )
+            else:
+                p.append(
+                    f'<path d="M {cx - 6:.0f} {cy} h 12" stroke="var(--muted)" '
+                    f'stroke-width="1.5" stroke-linecap="round"/>'
+                )
+    note(
+        p,
+        28,
+        H - 52,
+        "Stars: LiteLLM 62.4k, Langfuse 36.8k, promptfoo 26.7k, Kitaru 316, onpar 2; "
+        "Braintrust is closed source. GitHub API, 31 Oct 2026. A dash means the stage is "
+        "absent or explicitly out of scope in the vendor's own material.",
+    )
+    save("landscape-2026.svg", p)
+
+
+def autotune() -> None:
+    """Requirements in, twelve knobs through three forks, native config out.
+
+    The knob list, the requirement fields, the engines and both thresholds are
+    imported from the planner, so a new `Setting` or `Engine` shows up here on
+    the next run instead of the picture quietly lying. Only the grouping of
+    knobs under forks is written down, and it is keyed by enum member so a
+    rename fails loudly; any knob no fork claims lands in the last group.
+    """
+    import dataclasses
+    import sys
+
+    sys.path.insert(0, str(ROOT / "src"))
+    from onpar.engines import Setting
+    from onpar.plan import (
+        MAX_SPEC_DECODE_CONCURRENCY,
+        PREFIX_SHARING_FOR_RADIX,
+        Engine,
+        Requirements,
+    )
+
+    forks = [
+        (
+            f"1 · prefix sharing ≥ {PREFIX_SHARING_FOR_RADIX} picks the engine",
+            [Setting.PREFIX_REUSE],
+        ),
+        (
+            f"2 · concurrency > {MAX_SPEC_DECODE_CONCURRENCY} turns drafting off",
+            [Setting.SPECULATIVE, Setting.MAX_CONCURRENT],
+        ),
+        ("3 · latency budget vs throughput", [Setting.PREFILL_CHUNK]),
+    ]
+    claimed = {s for _, group in forks for s in group}
+    forks.append(("sized by the fit solver, or declared", [s for s in Setting if s not in claimed]))
+    reqs = [f.name for f in dataclasses.fields(Requirements)]
+    engines = [e.value for e in Engine]
+
+    W, H = 860, 500
+    p = head(
+        W,
+        H,
+        f"Autotune: {len(Setting)} knobs, three forks, {len(engines)} engines",
+        f"The planner reads {len(reqs)} requirements, settles {len(Setting)} engine-neutral "
+        "knobs through three forks (prefix sharing picks the engine, concurrency decides "
+        "speculative decoding, the latency budget decides chunked prefill), and spells "
+        f"them as native config for {', '.join(engines)}.",
+    )
+    small = 'class="t" style="font-size:13px"'
+
+    # Left: the requirements, straight from the dataclass.
+    p.append(f'<text x="40" y="70" {small}>requirements</text>')
+    for i, r in enumerate(reqs):
+        y = 84 + i * 34
+        p.append(f'<rect x="40" y="{y}" width="150" height="26" rx="6" fill="var(--panel)"/>')
+        p.append(f'<text x="52" y="{y + 17}" class="m">{r}</text>')
+
+    # Middle: knobs under the fork that sets them.
+    mx, mw = 260, 330
+    p.append(f'<text x="{mx}" y="70" {small}>knobs, each with its why</text>')
+    y, mids = 84, []
+    for k, (title, group) in enumerate(forks):
+        per_row = 1 if k < 3 else 2
+        nrows = math.ceil(len(group) / per_row)
+        h = 30 + nrows * 20
+        slot = min(k, 3)
+        p.append(f'<rect x="{mx}" y="{y}" width="{mw}" height="{h}" rx="8" fill="var(--panel)"/>')
+        p.append(
+            f'<rect x="{mx}" y="{y}" width="4" height="{h}" rx="2" fill="var(--s{slot})" '
+            f'class="pulse" style="animation-delay:{k * 0.6:.1f}s"/>'
+        )
+        p.append(f'<text x="{mx + 16}" y="{y + 19}" class="lb">{title}</text>')
+        for n, s in enumerate(group):
+            col, row = n % per_row, n // per_row
+            p.append(
+                f'<text x="{mx + 24 + col * 150}" y="{y + 40 + row * 20}" class="m">'
+                f"{s.value}</text>"
+            )
+        mids.append(y + h / 2)
+        y += h + 12
+
+    # Right: the engines the knobs are spelled for.
+    ex = 660
+    p.append(f'<text x="{ex}" y="70" {small}>native config</text>')
+    eys = []
+    for i, e in enumerate(engines):
+        ey = 84 + i * 42
+        p.append(f'<rect x="{ex}" y="{ey}" width="160" height="32" rx="6" fill="var(--panel)"/>')
+        p.append(f'<text x="{ex + 14}" y="{ey + 20}" class="m">{e}</text>')
+        eys.append(ey + 16)
+
+    # The flow: requirements feed every fork, every fork feeds every engine.
+    req_mid = 84 + (len(reqs) * 34 - 8) / 2
+    for m in mids:
+        p.append(
+            f'<path d="M 190 {req_mid:.0f} C 225 {req_mid:.0f} 225 {m:.0f} {mx} {m:.0f}" '
+            f'fill="none" stroke="var(--s0)" stroke-width="1.2" stroke-dasharray="4 3" '
+            f'opacity="0.7" class="flow"/>'
+        )
+    out_mid = sum(mids) / len(mids)
+    for ey in eys:
+        p.append(
+            f'<path d="M {mx + mw} {out_mid:.0f} C {mx + mw + 35} {out_mid:.0f} '
+            f'{ex - 35} {ey} {ex} {ey}" fill="none" stroke="var(--s1)" stroke-width="1.2" '
+            f'stroke-dasharray="4 3" opacity="0.7" class="flow"/>'
+        )
+    note(
+        p,
+        40,
+        H - 40,
+        "Every knob carries why; projections are roofline estimates, not measured. "
+        "A knob an engine cannot express becomes a plan warning, never a guessed flag.",
+    )
+    save("autotune.svg", p)
+
+
 if __name__ == "__main__":
     print("writing diagrams:")
     memory_breakdown()
@@ -2070,6 +2270,8 @@ if __name__ == "__main__":
     agentic_replay()
     conversation()
     resume_ledger()
+    landscape_2026()
+    autotune()
 
     # fit-explorer.json — precomputed solver output for the site's "Will it fit?"
     # explorer.  Same directory as the diagrams so `python3 tools/diagrams.py`

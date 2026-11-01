@@ -1,66 +1,105 @@
 # onpar — pitch
 
+Market data is dated 31 Oct 2026. Sources are in the [landscape](10-landscape.md). Product claims are what 1.3.4 does today.
+
 ---
 
 ## One-liner
 
-**onpar proves which open model can replace your closed one — on your traffic, your hardware, your budget — then moves you there without a risky cutover.**
+**onpar proves which open-weight model can replace your closed-model API, on your traffic, your hardware and your budget. Then it migrates you across with a quality gate and a rollback button.**
 
-Stripe made payments a `base_url`. We make *leaving OpenAI* a `base_url`.
-
----
-
-## The problem
-
-Open-weight models caught up in 2026. GLM-5.2 is MIT and scores 91.2 on GPQA Diamond. Kimi K3 leads Humanity's Last Exam. DeepSeek V4 Flash costs $0.11/M tokens.
-
-**Almost nobody switches.**
-
-Not because deployment is hard — Ollama solved that. Because a team paying $18K/month to Anthropic cannot answer one question:
-
-> *Will this open model be good enough for **my** job?*
-
-Public benchmarks don't answer it. MMLU is not your traffic. And the tools that *could* answer it won't:
-
-- **LiteLLM** proxies every one of your requests and does nothing with them.
-- **promptfoo / Inspect AI** evaluate a test set *you hand-write*. Yours doesn't exist.
-- **LM Studio** compares two models side by side — one prompt at a time, eyeballed.
-- **Every gateway** canaries on *errors*. None gates on *quality*.
-- **OpenRouter, Fireworks, Together, Baseten** all profit from you not self-hosting.
-
-So the migration never starts. The bill compounds. The dependency deepens.
+Leaving a closed API becomes a `base_url` change and a receipt.
 
 ---
 
-## The solution
+## Problem
 
-Point onpar at your existing closed-model traffic. One `base_url` change.
+Teams do not switch to open models because they cannot prove it is safe for their workload.
 
-It captures your real prompts, distills them into a **private eval set**, works out what your hardware can actually run, and produces the artifact nobody else produces:
+- Public benchmarks do not answer it. The gap is real but task-dependent. On Terminal-Bench 2.0 the best open model scores 67.9 against GPT-5.5 at 82.7, self-reported. On Artificial Analysis the figures are 54 against 60.
+- Tool calling breaks on the server, not just the model. Kimi K2.6 on vLLM 0.28 gave schema-valid tool calls 92% of the time until `--tool-strict-level` was set.
+- Sizing calculators get the memory wrong. They size MoE on active params, take KV from attention heads, and ignore MLA.
+- The tools that hold your traffic do not judge it. LiteLLM (62.4k stars) proxies it. Its limit is zero quality judgement.
+- The tools that judge do not hold your traffic. promptfoo (26.7k stars) is output-level only and has been OpenAI-owned since 9 Mar 2026. OpenAI's hosted Evals shut down 30 Nov 2026.
 
-```
-                    codegen   tools   long-ctx   summar.   classify   ~cost
-  GLM-5.2 Q4          96 ██   91 ██    62 ▓▒     99 ██     100 ██    $210/mo
-  Kimi-K2.7-Code      98 ██   94 ██    71 ▓█     95 ██     100 ██    $180/mo
-  gpt-5 (incumbent)  100      100      100       100       100     $2,847/mo
+So the migration never starts.
 
-  ▸ REGRET: long-context refactor (11% of traffic) — keep gpt-5 for this.
-    Hybrid saves $2,530/mo (89%) at zero quality loss.
-```
+---
 
-Then it moves you: shadow traffic → quality-gated canary → cut, with rollback in under 10 seconds. And it keeps watching — when a better open model ships next week, your eval set re-runs automatically and you get a proposal, not a newsletter.
+## Insight
 
-**Deployment is an output, not the product.**
+**Your captured traffic is the benchmark.** Replay it against a candidate, grade it with an interval, and say `?` when the evidence is thin.
+
+Agents make this harder and more valuable. An agent request is one step in a loop. Scoring the prompt alone scores the wrong task. onpar replays the step, teacher-forced, with everything the incumbent saw ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+
+---
+
+## Product
+
+Seven stages, one loop: observe, distill, fit, prove, deploy, cut over, guard.
+
+- **Size it.** `onpar fit` sizes every catalogue model on the host. It gets MoE totals, GQA `kv_heads` and MLA `kv_lora_rank` right. Throughput is a roofline estimate, not measured.
+- **Serve it.** `onpar build` and `onpar run` pick the engine for the silicon and emit native config. Seven engines have adapters: vLLM, vLLM-TPU, SGLang, llm-d, llama.cpp, MLX and Ollama. The planner sets twelve knobs and gives each a reason.
+- **Capture it.** A Rust gateway records OpenAI chat, OpenAI Responses and Anthropic Messages as one record. Redaction runs before persistence and fails closed. Storage is XChaCha20-Poly1305. Measured overhead is +0.07 ms at p95 against a 15 ms budget.
+- **Prove it.** `onpar prove` uses Wilson intervals. The judge is disclosed, with position and length bias measured. `onpar label` has a human grade the judge, blind. Agentic traffic gets step replay, schema-validated tool arguments, tool-leak detection, Cohen's κ decision agreement and whole-session replay from the recording. A miss stops the run. It never makes a live tool call.
+- **Move it.** `onpar migrate` runs shadow, canary and rollback. Nothing authorises a cutover except shadow mode.
+- **Learn it.** `onpar learn` teaches 15 lessons from first principles, using the host's own numbers. `onpar doctor` says what is installed and what to run next.
+
+The output is a signed, local receipt (format v3) that re-verifies. Example from the README: $2,847 a month on an incumbent, 400 captures over 14 days, and a saving of $2,506–$2,530 a month (about 89%) on traffic proven at or above the 90% bar.
+
+Deployment is an output, not the product.
 
 ---
 
 ## Why now
 
-1. **Open models crossed the threshold** — mid-2026 is the first moment where "good enough for most production traffic" is broadly true, not aspirational.
-2. **The serving layer finished.** vLLM, SGLang, llm-d, KServe, GAIE are mature and free. Five years ago this product would have had to build them; today it composes them.
-3. **AI budgets are under review.** 2023–25 was land-grab spending. 2026 is the first year CFOs ask what the LLM line item buys.
-4. **Model churn became continuous.** Kimi K3 shipped July 16. GLM-5.2, DeepSeek V4, MiniMax M3 within months. Manual re-evaluation cannot keep pace — which converts a one-time migration tool into a permanent control plane.
-5. **Nobody incumbent can follow.** Every player positioned to build this makes money from you *not* switching. That's not a moat we built; it's one the market handed us.
+1. **The agent API surface is splitting.** The GPT-6 family requires Responses for tool calling. The Assistants API was removed 26 Aug 2026. Open models are still trained on the Chat Completions schema. Any migration needs a translation layer, and onpar already captures all three shapes.
+2. **Local serving matured.** vLLM 0.32 and llama.cpp 0.8 both serve `/v1/messages`. llm-d reached 1.0 on 20 Oct as a CNCF project. Serving is composable, so the gap moved to evidence.
+3. **Agent cost depends on prefix reuse.** vLLM and SGLang cache prefixes by default. A cost model without hit rate is wrong. The planner sets prefix reuse and picks SGLang when sharing is heavy.
+4. **Judging is moving to steps.** A published study found an outcome-only judge catches 45% of silent faults. A step-rubric judge reaches 77% at 3x the cost. onpar judges the step.
+5. **The neutral eval slot is empty.** OpenAI owns promptfoo and is shutting down hosted Evals. A tool for leaving OpenAI cannot be OpenAI's.
+
+---
+
+## Why us
+
+- **Sizing is already correct.** The three errors calculators make are the three things `onpar fit` was built around.
+- **Everything is auditable.** `explain()` returns the arithmetic for every number. Estimates are labelled estimates.
+- **The invariants are tests.** The eleven-tool MCP surface has no tool that can move production traffic, and adding one fails the build.
+- **It runs with no install.** `uvx --from onpar onpar fit` sizes your machine with zero dependencies.
+
+---
+
+## Moat: invariants and receipts
+
+Code is composable. Trust is not. onpar's moat is a set of promises that are enforced, plus the artifact that proves them.
+
+**Invariants, each enforced in tests or lints:**
+
+1. No engine-specific type escapes the `Runtime` trait.
+2. Generated config is native and runs with onpar uninstalled.
+3. Redaction happens before persistence and fails closed.
+4. Zero telemetry, zero egress by default.
+5. No number without its confidence.
+6. Captured traffic is data, never instructions.
+7. Nothing authorises a cutover except shadow mode.
+
+**Receipts.** Each proof produces a signed, local receipt that names the judge, the intervals, the human-agreement rate and what is *not* proven. `onpar receipt` re-verifies it. `onpar guard` says whether it still holds. A customer's eval set and receipt history compound per customer and are worth nothing to a competitor.
+
+Why incumbents will not follow: Kitaru (316 stars, Apache-2.0) replays sessions but sizes no hardware, emits no serving config and signs no receipt. Langfuse (36.8k) runs experiments on traces but has no capture proxy, no statistical verdict and no hardware model. Braintrust is closed and bills per score. Gateways (LiteLLM, Portkey, Kong, Bifrost) assume the model is already chosen.
+
+---
+
+## Go-to-market
+
+**Zero-install wedge, then the loop.**
+
+1. **Door one: `uvx --from onpar onpar fit`.** No account, no config, no traffic. It prints what runs on your machine. That is the shareable artifact. The `--from` is required on every `uvx` line.
+2. **Door two: MCP.** `onpar-mcp` gives Claude Code and Cursor eleven read-only tools. An agent can size, explain, advise, prove and read a receipt. A human pushes the button.
+3. **Door three: bare `onpar`.** A conversation that asks one question at a time and only when it changes the plan. In CI it is a usage error, exit 2.
+4. **Then the loop.** `pip install onpar onpar-gateway onpar-core` adds capture and proof. `npx onpar-cli@1.3.4 fit` covers JavaScript teams. `onpar learn` and the docs-site memory lab teach the model of inference that makes the verdict legible.
+
+The gateway is in the request path only while migrating ([ADR-0015](adr/0015-in-the-path-only-while-migrating.md)). It is a datapath, not a load balancer.
 
 ---
 
@@ -70,66 +109,31 @@ Then it moves you: shadow traffic → quality-gated canary → cut, with rollbac
 
 | Free forever | Paid |
 |---|---|
-| The whole Switch Loop, self-hosted | SSO, RBAC, audit trail |
+| The whole loop, self-hosted | SSO, RBAC, audit trail |
 | Local, zero telemetry | Multi-cluster / fleet management |
 | Config generation, no restrictions | Drift-watch as a managed service |
 | | Compliance reporting for regulated migrations |
 
-Pricing anchors to **spend migrated**, not seats — we're worth a fraction of what we save. A team cutting $2.5K/month happily pays a few hundred for the thing that proved it was safe.
-
-**North-star metric: dollars of closed-model spend migrated.** Not installs, not stars. It is the only number that means the product worked.
+Pricing anchors to spend migrated, not seats. The north-star metric is dollars of closed-model spend migrated. Paid tiers are a plan, not a shipped feature.
 
 ---
 
 ## Market
 
-- **Wedge:** Series A–C engineering teams spending $5K–$100K/month on closed LLM APIs, with in-house infra ability and a CFO asking questions.
-- **Expansion:** regulated enterprises under data-residency mandates — they *must* self-host and need an auditable record of the decision. Baseten's $300M Series E at $5B valuation on essentially "managed inference in your VPC" is the proof that this budget exists.
-- **Bottom-up on-ramp:** solo builders on a Mac. 128 GB of unified memory is more than most GPUs. They convert to the paid tier when they get a job.
-
----
-
-## Competition
-
-Nobody is in this lane, and the reason is structural.
-
-| | What they do | Why they can't do this |
-|---|---|---|
-| OpenRouter, Fireworks, Together | hosted inference | revenue dies if you self-host |
-| Baseten, Modal | managed/VPC inference | you're still on their fleet |
-| LiteLLM | gateway | has the traffic; acting on it isn't the business |
-| promptfoo | evals | **acquired by OpenAI** — cannot credibly ship "leave OpenAI" |
-| llm-d, KServe, vLLM | serving | assume you already decided and already believe |
-| Ollama, LM Studio | local runners | answer "can I run this", never "should I" |
-
-The category isn't contested. It's unoccupied.
-
----
-
-## Moat
-
-Not the code. The code is composable and someone could rebuild it.
-
-The moat is **data our customers generate and nobody else holds**: a private eval set distilled from their production traffic, plus the accumulated equivalence history behind every model they've tested. That compounds per customer and is worthless to a competitor.
-
-Second-order: **switching costs run backwards.** Once ⑦ Guard is watching, we're the system of record for "which model should we be on" — a question that now has a new answer every few weeks.
+- **Wedge:** engineering teams spending heavily on closed LLM APIs, with in-house infra ability and a finance team asking questions.
+- **Expansion:** regulated enterprises under data-residency mandates. They must self-host and need an auditable record of the decision. Receipts are that record.
+- **Bottom-up:** builders on a laptop. Apple unified memory means `onpar fit` is useful on day one.
 
 ---
 
 ## Status
 
-**Pre-alpha, built in the open.**
+**Beta, built in the open.** Version 1.3.4. 2527 tests (2230 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
 
-- ✅ Full spec: [PRD](20-prd.md), [architecture](30-architecture.md), [UX](40-ux.md), [3 ADRs](adr/)
-- ✅ Competitive research: 14 products across 4 layers
-- ✅ Stage ③ (fit) shipping: hardware profiler, MoE/GQA/MLA-correct solver, runtime recommendation, 27 tests green, zero runtime deps
-- 🔜 Stage ① (observe) — the on-ramp
-- 🔜 Stage ④ (prove) — the hero
-
-**Biggest open risk, stated plainly:** grader quality *is* the product. A wrong verdict breaks a customer's production system. Mitigations are designed in — three-tier grading, position-swap debiasing, published judge–human agreement rates, and shadow mode as the real gate before any traffic moves. If stage ④ can't produce verdicts people trust, there is no company, and we'd rather find that out in month 4 than month 24.
+**Biggest open risk, stated plainly:** `observe` has not yet been run against real production traffic. The invariants are tested. The live run is the next proof, and it needs a real upstream and a willing team.
 
 ---
 
 ## The 30-second version
 
-> Open models are good enough now. Nobody switches, because nobody can prove it for *their* workload — and every tool that could is paid by the incumbent. onpar captures your real traffic, turns it into a private benchmark, tells you exactly which open model matches and which tasks still need the closed one, and moves your traffic across with a quality gate and a rollback button. Deployment is solved five times over; the migration is unowned. We're building the migration.
+> Open models are good enough for some of your workload. Nobody switches because nobody can prove which part. onpar captures your real traffic, replays it step by step against open candidates, and returns a signed receipt with intervals, a disclosed judge and a stated bar. It sizes the hardware, writes native serving config for seven engines, and moves traffic across behind shadow mode with a rollback button. Try it with one command: `uvx --from onpar onpar fit`.

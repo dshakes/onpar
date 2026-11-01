@@ -1,6 +1,6 @@
 # Verdict: build vs. buy vs. don't
 
-**Date:** 2026-07-27 · **Status:** decided · **Author:** research pass 1
+**Date:** 2026-07-27 · **Status:** decided, and built (refreshed 2026-11-01 against 1.3.4) · **Author:** research pass 1
 
 You asked: *do I need this, or does it already exist?* Honest answer in three parts.
 
@@ -15,8 +15,8 @@ You asked: *do I need this, or does it already exist?* Honest answer in three pa
 | Speculative decoding / EAGLE-3 | Already shipped *inside* vLLM (`--speculative-config`), SGLang (`--speculative-algorithm EAGLE3`), and mlx-lm 0.21 | **Don't build. Configure it.** |
 | KV-cache-aware routing | [Gateway API Inference Extension](https://github.com/kubernetes-sigs/gateway-api-inference-extension) + llm-d Endpoint Picker. 3× output tok/s, 2× TTFT reduction, measured. | **Don't build. Adopt it.** |
 | Local one-click LLM | Ollama, LM Studio, Jan, GPT4All | **Don't build.** Ollama has 4,500+ models and a daemon. |
-| Multi-provider gateway | LiteLLM (self-host), OpenRouter, Portkey | **Don't build the transport.** ~10–20ms overhead, solved. |
-| Eval harness | lm-eval-harness, Inspect AI, promptfoo, DeepEval | **Don't build the runner.** |
+| Multi-provider gateway | LiteLLM (self-host), OpenRouter, Portkey | **Don't build the multi-provider transport.** Solved. The gateway we ship is a thin capture datapath, not a router. |
+| Eval harness | lm-eval-harness, Inspect AI, promptfoo, DeepEval | **Don't build the benchmark runner.** We own the part they lack: grading on your own captured traffic. |
 | Chat UI / RAG | Open WebUI, AnythingLLM, Dify (140K stars) | **Don't build.** |
 
 Building any one of these is a losing race. Building all of them is how a startup dies.
@@ -31,18 +31,20 @@ Your clarification is the whole product:
 
 The blocker for that pivot **is not deployment**. Ollama solved deployment in 2023. The blocker is **evidence**.
 
-A team running GPT-5 or Claude in production will not switch to Kimi K3 because a leaderboard says 76.8 on SWE-Bench. They switch when someone shows them: *on your actual traffic, this open model matches your closed model 94% of the time, costs 11× less, runs on hardware you already have, and here is the rollback button.*
+A team running a closed model in production will not switch because a leaderboard says so. They switch when someone shows them, with a confidence interval: *on your actual traffic, this open model matches your closed model at or above your bar, costs a fraction as much, runs on hardware you already have, and here is the rollback button.* (Illustrative. The real numbers come from `onpar prove` and are printed with their interval, or as `?` when the evidence is thin.)
 
 Nobody produces that artifact. Look at the seams:
 
 - **LiteLLM** sees all your traffic and does nothing with it. No eval, no equivalence, no migration.
-- **promptfoo** evaluates prompts but has no idea what your production traffic looks like, and can't deploy.
+- **promptfoo** evaluates outputs but has no idea what your production traffic looks like, and can't deploy. OpenAI has owned it since 9 Mar 2026.
 - **lm-eval-harness** measures MMLU. Your users don't send MMLU.
 - **Ollama** deploys the model but can't tell you if it's good enough for *your* job.
 - **OpenRouter** is structurally disincentivized from helping you self-host.
 - **llm-d / KServe** assume you already decided which model, and already believe.
 
 Every tool covers one step. **The migration itself is unowned.** That's the wedge.
+
+Re-checked on 31 Oct 2026 ([landscape](10-landscape.md)): the closest newcomer, Kitaru, replays recorded agent sessions and swaps the model. It sizes no hardware, emits no serving config and signs no receipt. The wedge held.
 
 ---
 
@@ -76,9 +78,25 @@ Half the stack you named is CUDA-first and will not run locally:
 | **llama.cpp Metal** | ✅ best single-stream, broadest model support |
 | **Ollama** | ✅ zero-config daemon, configured by environment rather than flags |
 
+onpar now carries adapters for exactly seven engines: vLLM, vLLM-TPU, SGLang, llm-d, llama.cpp, MLX and Ollama. `onpar build` picks the one that fits the silicon and emits its native config. `onpar fit` and `onpar doctor` run on the M4 Max with no CUDA.
+
 This is not a footnote — it's an architectural forcing function. It means the product **must** treat the runtime as a swappable backend from commit one, because your dev machine and your customers' prod clusters run *different engines*. Which is exactly the abstraction that makes the product portable. See [ADR-0002](adr/0002-runtime-abstraction.md).
 
 It also means: **you can dogfood the whole loop locally**, with 128 GB of unified memory, which is more than most GPUs. That's a genuine advantage.
+
+---
+
+## 5. What the verdict became
+
+The reframe shipped as the seven-stage loop: observe, distill, fit, prove, deploy, cut over, guard.
+
+- **Size it.** `onpar fit` sizes every catalogue model on the host and gets MoE totals, GQA `kv_heads` and MLA `kv_lora_rank` right. Throughput is a roofline estimate, not measured.
+- **Tune it.** `onpar build` sets twelve knobs per engine and gives each one a reason.
+- **Prove it.** `onpar prove` grades candidates on your captured traffic, with Wilson intervals, a disclosed judge and measured judge bias. Agentic traffic is replayed per step and per session ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)). `onpar label` has a human grade the judge, blind.
+- **Move it.** `onpar migrate` runs shadow, canary and rollback. Nothing but shadow mode authorises a cutover. A judge alone never promotes.
+- **Learn it.** `onpar learn` teaches 15 lessons on the host's own numbers. `onpar doctor` says what is installed and what to run next.
+
+The datapath is in the request path only while migrating ([ADR-0015](adr/0015-in-the-path-only-while-migrating.md)).
 
 ---
 
