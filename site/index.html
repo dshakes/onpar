@@ -361,6 +361,25 @@
     header{padding:44px 0 22px}
     .bg::after{display:none}
   }
+
+  /* --- fit explorer -------------------------------------------------------- */
+  .ex-controls{display:flex;flex-wrap:wrap;gap:18px;margin-top:30px;align-items:flex-end}
+  .ex-group{display:flex;flex-direction:column;gap:6px}
+  .ex-label{font-size:11.5px;color:var(--ink3);letter-spacing:.07em;text-transform:uppercase;
+            font-weight:600}
+  .ex-select{padding:8px 12px;border-radius:8px;border:1px solid var(--line2);
+             background:var(--panel);color:var(--ink);font-size:13.5px;
+             font-family:inherit;cursor:pointer;min-width:230px}
+  .ex-select:focus{outline:2px solid var(--candidate);outline-offset:2px;border-color:transparent}
+  /* Concurrency buttons reuse .tab; no extra rule needed. */
+  .ex-tabs{display:flex;gap:7px}
+  .ex-ok{color:var(--candidate)}
+  .ex-no{color:var(--alarm)}
+  .ex-dim{color:var(--ink3)}
+  .ex-meta{font-size:13px;color:var(--ink3);margin-top:14px;line-height:1.6}
+  .ex-err{font-size:14.5px;color:var(--alarm);margin-top:24px}
+  /* No text shown when loading — avoids a flash of placeholder copy. */
+  #ex-out{min-height:4rem}
 </style>
 </head>
 <body>
@@ -372,6 +391,7 @@
     <a href="#problem">Why</a>
     <a href="#loop">The loop</a>
     <a href="#sizing">Sizing</a>
+    <a href="#explore">Explore</a>
     <a href="#learn">Learn</a>
     <a href="#install">Install</a>
     <a href="docs/">Docs</a>
@@ -438,7 +458,7 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="n grad">2412</div><div class="l">tests · Rust + Python</div></div>
+    <div class="stat"><div class="n grad">2524</div><div class="l">tests · Rust + Python</div></div>
     <div class="stat"><div class="n">0</div><div class="l">bytes of telemetry, by design</div></div>
     <div class="stat"><div class="n">9</div><div class="l">diagrams, palette-validated</div></div>
     <div class="stat"><div class="n">7</div><div class="l">engines planned for and emitted</div></div>
@@ -592,6 +612,42 @@
     arithmetic looks fine either way.</p></div>
 </div></section>
 
+<section id="explore"><div class="wrap rise">
+  <p class="eyebrow"><i class="silmark"></i>Every catalogue model on every machine</p>
+  <h2>Will it fit?</h2>
+  <p class="sub">Pick a machine and a context. Every number is the solver's output for that
+    machine — the same arithmetic <code>onpar fit</code> runs. Use
+    <code>onpar fit --explain &lt;model&gt;</code> to see the full breakdown.</p>
+
+  <div class="ex-controls">
+    <div class="ex-group">
+      <label class="ex-label" for="ex-profile">Machine</label>
+      <select class="ex-select" id="ex-profile" aria-label="Hardware profile"></select>
+    </div>
+    <div class="ex-group">
+      <label class="ex-label" for="ex-ctx">Context</label>
+      <select class="ex-select" id="ex-ctx" aria-label="Context length">
+        <option value="8192">8k tokens</option>
+        <option value="32768" selected>32k tokens</option>
+        <option value="131072">128k tokens</option>
+      </select>
+    </div>
+    <div class="ex-group">
+      <span class="ex-label" id="ex-conc-label">Concurrency</span>
+      <div class="ex-tabs" role="group" aria-labelledby="ex-conc-label">
+        <button class="tab" aria-selected="true"  data-conc="1"  type="button">1</button>
+        <button class="tab" aria-selected="false" data-conc="8"  type="button">8</button>
+        <button class="tab" aria-selected="false" data-conc="32" type="button">32</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ex-out" aria-live="polite"></div>
+  <p class="ex-err" id="ex-err" hidden>Fit data could not be loaded. Run
+    <code>python3 tools/site_data.py</code> to regenerate
+    <code>site/assets/fit-explorer.json</code>.</p>
+</div></section>
+
 <section id="plan"><div class="wrap rise">
   <p class="eyebrow">Engine and flags, derived</p>
   <h2>Batch and real-time are tuned in<br><span class="grad">opposite directions.</span></h2>
@@ -654,6 +710,9 @@
   <p class="sub">Nine diagrams on a palette validated for colour-vision deficiency against the
     real surface — computed, not chosen by eye. The full course, with the arithmetic, is in
     the <a href="docs/#edu-why">docs</a>.</p>
+  <p class="sub">Or run <code>onpar learn basics</code> for an interactive curriculum where
+    every figure is computed by the solver for the machine you are on — not a textbook example,
+    the actual numbers for your hardware.</p>
 
   <div class="gallery">
     <figure>
@@ -913,6 +972,127 @@ addEventListener('scroll', () => nav.classList.toggle('stuck', scrollY > 8), { p
       host.replaceChildren(el);
     } catch { /* the <noscript> image stands in */ }
   }));
+})();
+</script>
+<script>
+// "Will it fit?" explorer — fetches precomputed solver data and renders on
+// demand.  No arithmetic here: every number comes from fit-explorer.json,
+// which tools/site_data.py generates from the real onpar.fit solver.
+(async () => {
+  const profileSel = document.getElementById('ex-profile');
+  const ctxSel     = document.getElementById('ex-ctx');
+  const concBtns   = document.querySelectorAll('[data-conc]');
+  const out        = document.getElementById('ex-out');
+  const errEl      = document.getElementById('ex-err');
+
+  if (!profileSel) return; // section not in page
+
+  let EX = null; // the full JSON payload
+
+  function concurrency() {
+    return parseInt([...concBtns].find(b => b.getAttribute('aria-selected') === 'true')
+      ?.dataset.conc || '1', 10);
+  }
+
+  function fmt(gb) {
+    // Show one decimal for numbers below 100, round above.
+    return gb < 100 ? gb.toFixed(1) : gb.toFixed(0);
+  }
+
+  function render() {
+    if (!EX) return;
+    const pid  = profileSel.value;
+    const ctx  = parseInt(ctxSel.value, 10);
+    const conc = concurrency();
+    const key  = `${pid}/${ctx}/${conc}`;
+    const entry = EX.data[key];
+    if (!entry) { out.innerHTML = '<p class="ex-dim">No data for this combination.</p>'; return; }
+
+    const prof = EX.profiles.find(p => p.id === pid);
+    const usable = prof ? prof.usable : 0;
+
+    // Sort: feasible (by params desc) then not-feasible (by params desc).
+    const rows = [...entry.rows].sort((a, b) => {
+      if (a[5] !== b[5]) return a[5] ? -1 : 1;
+      return EX.models[b[0]].params - EX.models[a[0]].params;
+    });
+
+    let html = '<div class="tablewrap"><table>';
+    html += '<thead><tr>'
+      + '<th>Model</th><th>Quant</th><th>Weights</th><th>KV</th>'
+      + '<th>Total</th><th>Free</th><th>Fit</th>'
+      + '<th>tok/s est.</th><th>Licence</th>'
+      + '</tr></thead><tbody>';
+
+    for (const r of rows) {
+      // r = [model_idx, quant, weights_gb, kv_gb, total_gb, feasible, reason|null, tps|null]
+      const [midx, quant, wgb, kvgb, totgb, ok, reason, tps] = r;
+      const m    = EX.models[midx];
+      const free = usable - totgb;
+      const freeStr = free >= 0
+        ? `<span class="ex-ok">${fmt(free)} GB</span>`
+        : `<span class="ex-no">${fmt(free)} GB</span>`;
+      const fitStr = ok
+        ? '<span class="ex-ok">✓</span>'
+        : `<span class="ex-no">✗</span> <span class="ex-dim" style="font-size:12px">${reason}</span>`;
+      const tpsStr = tps ? `~${tps}` : '<span class="ex-dim">—</span>';
+      const licOk  = m.ok
+        ? `<span class="ex-ok">${m.lic}</span>`
+        : `<span class="ex-no">${m.lic}</span>`;
+      html += `<tr>
+        <td><b>${m.name}</b></td>
+        <td><code>${quant}</code></td>
+        <td>${fmt(wgb)} GB</td>
+        <td>${fmt(kvgb)} GB</td>
+        <td>${fmt(totgb)} GB</td>
+        <td>${freeStr}</td>
+        <td>${fitStr}</td>
+        <td>${tpsStr}</td>
+        <td>${licOk}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+
+    // Runtime recommendation and provenance.
+    const rt = entry.rt ? `<b>Recommended engine:</b> <code>${entry.rt}</code>. ` : '';
+    html += `<p class="ex-meta">${rt}Every number is onpar's solver output for this machine`
+      + ` — <code>onpar fit --explain &lt;model&gt;</code> shows the arithmetic.`
+      + ` tok/s: ${EX.meta.tps_note}.`
+      + ` Generated ${EX.meta.generated} from onpar ${EX.meta.version}.</p>`;
+
+    out.innerHTML = html;
+  }
+
+  // Populate machine dropdown once data loads.
+  function populate() {
+    for (const p of EX.profiles) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${p.mem} GB)`;
+      // Default to h100 if available, else first entry.
+      if (p.id === 'h100') opt.selected = true;
+      profileSel.appendChild(opt);
+    }
+    render();
+  }
+
+  profileSel.addEventListener('change', render);
+  ctxSel.addEventListener('change', render);
+  concBtns.forEach(b => b.addEventListener('click', () => {
+    concBtns.forEach(x => x.setAttribute('aria-selected', 'false'));
+    b.setAttribute('aria-selected', 'true');
+    render();
+  }));
+
+  try {
+    const resp = await fetch('assets/fit-explorer.json');
+    if (!resp.ok) throw new Error(resp.status);
+    EX = await resp.json();
+    populate();
+  } catch {
+    errEl.hidden = false;
+    out.innerHTML = '';
+  }
 })();
 </script>
 </body>

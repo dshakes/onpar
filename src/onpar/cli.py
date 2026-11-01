@@ -2038,6 +2038,91 @@ def cmd_version(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_learn(args: argparse.Namespace) -> int:
+    """LLM inference curriculum grounded in this machine's actual numbers.
+
+    Every figure is derived from onpar's own solver for the hardware you're
+    sitting at. No generic prose — if qwen3-32b at q4 needs 18.4 GB of weights
+    on a 96 GB machine, that is the number you see, with the formula beside it.
+    """
+    from . import learn as _learn
+
+    model_id: str | None = getattr(args, "model", None) or None
+    no_quiz: bool = getattr(args, "no_quiz", False)
+    as_json: bool = getattr(args, "json", False)
+    track: str | None = getattr(args, "track", None)
+    lesson_n: int | None = getattr(args, "lesson_n", None)
+
+    if not track:
+        if as_json:
+            # The index as data: an agent or UI picking a lesson should not
+            # have to parse the human listing.
+            print(
+                json.dumps(
+                    {
+                        "tracks": {
+                            t: {
+                                "blurb": blurb,
+                                "lessons": [
+                                    {"id": ls.id, "n": int(ls.id.split(".")[-1]), "title": ls.title}
+                                    for ls in _learn._BY_TRACK[t]
+                                ],
+                            }
+                            for t, blurb in _learn.TRACK_BLURBS.items()
+                        }
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+        # List all tracks and their lessons
+        print()
+        print("  onpar learn — inference from first principles, on this machine's numbers")
+        print()
+        for t, blurb in _learn.TRACK_BLURBS.items():
+            print(f"  {t:<14}  {blurb}")
+            for ls in _learn._BY_TRACK[t]:
+                n = ls.id.split(".")[-1]
+                print(f"    {n}.  {ls.title}")
+            print()
+        print("  onpar learn basics             # walk the basics track")
+        print("  onpar learn intermediate       # walk the intermediate track")
+        print("  onpar learn basics 3           # one lesson by number")
+        print("  onpar learn --model qwen3-32b  # use a specific model")
+        print()
+        return 0
+
+    # Validate track name
+    try:
+        lessons_in_track = _learn._track_lessons(track)
+    except ValueError as e:
+        raise ValueError(str(e)) from e
+
+    ctx = _learn._make_context(model_id)
+
+    if lesson_n is not None:
+        # One lesson by 1-indexed number
+        idx = lesson_n - 1
+        if idx < 0 or idx >= len(lessons_in_track):
+            raise ValueError(
+                f"lesson {lesson_n} is out of range for track {track!r} (1–{len(lessons_in_track)})"
+            )
+        results = [_learn.render(lessons_in_track[idx], ctx)]
+    else:
+        results = _learn.render_all(track, ctx)
+
+    if as_json:
+        import json as _json
+
+        print(_json.dumps(_learn.to_json_obj(results), indent=2))
+        return 0
+
+    tty = sys.stdin.isatty() and sys.stdout.isatty() and lesson_n is None
+    _learn._run_interactive(results, no_quiz=no_quiz, tty=tty)
+    print()
+    return 0
+
+
 def cmd_upgrade(args: argparse.Namespace) -> int:
     """`onpar upgrade`. Prints how to upgrade; does not do it.
 
@@ -2162,6 +2247,8 @@ the loop, in order — start with `onpar fit`, it needs nothing:
 
   doctor      what is installed, what to run next        onpar doctor
   label       grade the judge's comparisons, blind       onpar label judged.jsonl
+  learn       inference curriculum on this machine's numbers  onpar learn
+  learn       pick a track:                              onpar learn basics
 
 Or describe what you are building: `onpar` with no verb asks only what it needs to.
 """
@@ -2452,6 +2539,27 @@ def main(argv: list[str] | None = None) -> int:
     dr = sub.add_parser("doctor", help="what is installed, what each stage needs, what to run next")
     dr.add_argument("--json", action="store_true", help="machine-readable")
     dr.set_defaults(fn=cmd_doctor)
+
+    le = sub.add_parser("learn", help="LLM inference curriculum grounded in this machine's numbers")
+    le.add_argument(
+        "track",
+        nargs="?",
+        choices=list(["basics", "intermediate"]),
+        help="track to walk (basics or intermediate)",
+    )
+    le.add_argument(
+        "lesson_n",
+        nargs="?",
+        type=int,
+        metavar="LESSON",
+        help="lesson number (1-indexed); walks the whole track if omitted",
+    )
+    le.add_argument("--model", default="", help="catalogue model id to use as the example")
+    le.add_argument(
+        "--no-quiz", action="store_true", dest="no_quiz", help="show answers without prompting"
+    )
+    le.add_argument("--json", action="store_true", help="machine-readable output")
+    le.set_defaults(fn=cmd_learn)
 
     lb = sub.add_parser("label", help="grade judged comparisons blind, to measure the judge")
     lb.add_argument("ledger", help="the JSONL written by `onpar prove --judge-sample`")

@@ -2062,4 +2062,12 @@ if __name__ == "__main__":
     agentic_replay()
     conversation()
     resume_ledger()
+
+    # fit-explorer.json — precomputed solver output for the site's "Will it fit?"
+    # explorer.  Same directory as the diagrams so `python3 tools/diagrams.py`
+    # keeps every site asset in sync in one command.
+    import site_data
+
+    site_data.write(site_data.generate())
+
     print("done")

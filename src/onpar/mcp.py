@@ -460,6 +460,37 @@ def _guard(path: str, today: str = "", available: list[str] | None = None) -> di
     }
 
 
+def _learn(
+    track: str = "",
+    lesson: int | None = None,
+    model: str = "",
+) -> dict[str, Any]:
+    """Structured lesson content grounded in this machine's solver numbers.
+
+    Returns lesson text, figures, questions and answers derived from solve()
+    for the hardware detected here. Read-only — nothing is configured or started.
+    """
+    from . import learn as _learn_mod
+
+    ctx = _learn_mod._make_context(model or None)
+
+    if track:
+        lessons_in_track = _learn_mod._track_lessons(track)
+        if lesson is not None:
+            idx = lesson - 1
+            if idx < 0 or idx >= len(lessons_in_track):
+                raise ValueError(
+                    f"lesson {lesson} out of range for track {track!r} (1–{len(lessons_in_track)})"
+                )
+            results = [_learn_mod.render(lessons_in_track[idx], ctx)]
+        else:
+            results = _learn_mod.render_all(track, ctx)
+    else:
+        results = [_learn_mod.render(ls, ctx) for ls in _learn_mod.LESSONS]
+
+    return _learn_mod.to_json_obj(results)
+
+
 def _catalog() -> dict[str, Any]:
     """The model catalogue with licences and architecture-verification flags."""
     return {
@@ -809,6 +840,39 @@ TOOLS: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {
                 "restrictions that need reading before production use."
             ),
             "inputSchema": {"type": "object", "properties": {}},
+        },
+    ),
+    "onpar_learn": (
+        _learn,
+        {
+            "description": (
+                "LLM inference curriculum grounded in this machine's solver numbers. "
+                "Returns lesson text, figures, questions and derived answers. "
+                "Every figure comes from solve() for the hardware here — no generic prose. "
+                "Read-only; nothing is configured or started."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track": {
+                        "enum": ["basics", "intermediate", ""],
+                        "description": (
+                            "Track to return. Omit (or '') for all lessons. "
+                            "'basics' for anyone; 'intermediate' for engineers."
+                        ),
+                    },
+                    "lesson": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "1-indexed lesson number within the track.",
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "catalogue model id to use as the example; "
+                        "defaults to the largest that fits this machine at 32k/1.",
+                    },
+                },
+            },
         },
     ),
 }

@@ -4,7 +4,7 @@
 
 # Is the open model<br>on par?
 
-### Answered on your traffic, your hardware, your budget — per task, with confidence intervals, and a `?` where the evidence is too thin to say. Then served in one command, with no config file. Ever.
+### Proves whether an open-weight model matches the closed model you pay for — on your own traffic, on hardware you own — then moves you across with a gate and a rollback. Every number carries its interval, and a cell with too little evidence prints `?`.
 
 ```bash
 onpar run qwen3-30b-a3b
@@ -19,13 +19,42 @@ leaderboard, on your own captured requests — that is one more command, and it
 answers per cluster with confidence intervals instead of a shrug.**
 
 [![status](https://img.shields.io/badge/status-beta-22d3ee?style=flat-square)](docs/50-roadmap.md)
-[![tests](https://img.shields.io/badge/tests-2412-34d399?style=flat-square)](#verification)
+[![tests](https://img.shields.io/badge/tests-2524-34d399?style=flat-square)](#verification)
 [![license](https://img.shields.io/badge/license-Apache--2.0-a78bfa?style=flat-square)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-read-fbbf24?style=flat-square)](https://dshakes.github.io/onpar/docs/)
 
 **[Site](https://dshakes.github.io/onpar/) · [Docs](https://dshakes.github.io/onpar/docs/) · [Agent-first](#agent-first-by-construction) · [Why](#why-this-exists) · [Quickstart](#try-it-in-ten-seconds) · [Roadmap](docs/50-roadmap.md)**
 
 </div>
+
+**Who it is for.** A team paying a closed-model API that suspects an open model
+would do, and cannot prove it. Engineers get the arithmetic, the receipts and
+the serving config. Everyone else gets a conversation: run `onpar` with no
+arguments and describe what you are building, and `onpar learn` teaches the
+inference basics using the numbers of the machine you are sitting at.
+
+**What is different.**
+
+- **Your traffic is the benchmark.** A local proxy captures real requests,
+  redacted before they touch disk, across the OpenAI chat, OpenAI Responses and
+  Anthropic Messages APIs. Nothing leaves the machine.
+- **Agent steps are replayed faithfully.** Each captured step goes back to the
+  candidate with the full conversation, tool schemas and tool results the
+  incumbent saw. Whole sessions are replayed from the recording. Decision
+  agreement is chance-corrected.
+- **A verdict is a receipt, not a dashboard.** Wilson intervals per task, the
+  judge disclosed and measured for position and length bias, a signed local
+  file that re-verifies, and the regret set printed first.
+- **The hardware answer is exact.** MoE, GQA and MLA sizing done right, the
+  engine chosen for your silicon, native config emitted with the tool-calling
+  parser the model family needs. No wrapper to keep running.
+
+| | measured, not claimed |
+|---|---|
+| gateway overhead | **+0.07 ms** added p95 with capture on, against a 15 ms budget; the same test proves it detects 25 ms of injected delay |
+| capture at rest | redacted *then* encrypted; a redaction failure drops the record rather than writing it |
+| verdicts | per-task Wilson intervals; a task moves only when the whole interval clears the bar |
+| cutover | nothing moves production traffic except shadow mode; the MCP surface has no verb that can, and adding one fails the build |
 
 ## The problem
 
@@ -95,6 +124,20 @@ it is running on and tells you what fits:
 
 Every number carries its arithmetic. `onpar fit --explain <model-id>`
 shows the derivation for any row — weights, KV, overhead, headroom.
+
+### Learn
+
+```bash
+onpar learn            # list the two tracks
+onpar learn basics     # 7 lessons: weights → KV → bandwidth → quantization → MoE → Wilson
+onpar learn basics 3   # one lesson, jump straight to weights + KV + overhead totals
+onpar learn intermediate  # 8 lessons: GQA · MLA · concurrency · prefix caching · speculative decoding
+```
+
+Every figure is computed by the same solver that powers `onpar fit`, so the
+numbers in the lesson are the numbers of this machine — not textbook examples.
+The curriculum has no fixed values; a lesson on a 128 GB Mac and one on a 24 GB
+GPU show different arithmetic and reach different conclusions.
 
 ### Ask it in English instead
 
@@ -309,7 +352,7 @@ shapes that were never scored.
 The same engine is a CLI, an MCP server, a Python SDK and a workbench —
 one core, four surfaces, no wrapper around a subprocess:
 
-<img src="docs/assets/agent-surface.svg" alt="What an agent can reach over MCP: ten read-only tools, receipts and eval sets as resources confined to one eval root, and three pre-built workflow prompts. Below them, a dashed red boundary containing the verbs that move production traffic — cutover, deploy, route, promote — marked absent by construction rather than by policy: there is no such tool to call." width="100%">
+<img src="docs/assets/agent-surface.svg" alt="What an agent can reach over MCP: eleven read-only tools, receipts and eval sets as resources confined to one eval root, and three pre-built workflow prompts. Below them, a dashed red boundary containing the verbs that move production traffic — cutover, deploy, route, promote — marked absent by construction rather than by policy: there is no such tool to call." width="100%">
 
 ```jsonc
 // onpar-mcp — JSON-RPC over stdio, zero dependencies
@@ -323,6 +366,7 @@ onpar_distill   // captured traffic -> an eval set, so there is something to pro
 onpar_prove     // run the eval suite: verdict, traffic split, and a receipt
 onpar_receipt   // read a proof: what is proven, what must stay, what is unknown
 onpar_guard     // does that proof still hold — and if not, which of three ways
+onpar_learn     // inference curriculum grounded in this machine's numbers
 ```
 
 No tool in that registry can move production traffic, and adding one fails
@@ -409,12 +453,12 @@ nothing installed; a test fails if anything networked is even imported.
 ## Verification
 
 ```bash
-cargo test --all                                   # 296 Rust
+cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2116 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2227 Python
 ```
 
-**2412 tests.** 2116 Python, 296 Rust. Twenty-six of the Python tests skip on a
+**2524 tests.** 2227 Python, 297 Rust. Twenty-six of the Python tests skip on a
 bare machine. Eleven are environmental: nine need the compiled extension (`maturin
 develop` in `onpar-py/` turns them on), and two ask vLLM and SGLang for their
 own flags, which needs those engines installed. CI runs both inside the engines'
@@ -426,9 +470,9 @@ to skip when a demo failed — which is how two of them sat broken behind a gree
 tick. The Rust core denies `unwrap`/`expect`/`panic!`/slice-indexing at the lint level — a sizing or licence bug must not be a panic. Gateway tests run over **real TCP** against a **real** upstream, because a test that calls the handler directly passes even when the response is buffered.
 
 ```bash
-cargo test --all                                   # 296 Rust
+cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2116 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2227 Python
 ```
 
 Every module carries an assert-based `demo()` self-check runnable via

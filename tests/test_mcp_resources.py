@@ -255,7 +255,7 @@ def test_the_tools_are_still_read_only():
     construction: it returns a proposal and touches nothing"), so distill
     returns the eval set instead of writing it.
     """
-    assert len(mcp.TOOLS) == 10
+    assert len(mcp.TOOLS) == 11
     for name in mcp.TOOLS:
         assert not any(
             w in name for w in ("deploy", "apply", "promote", "cutover", "write", "delete")
