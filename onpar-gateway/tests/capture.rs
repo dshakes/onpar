@@ -928,3 +928,40 @@ async fn captures_without_a_request_id_header_get_distinct_non_empty_ids() {
         "two headerless captures must have distinct ids"
     );
 }
+
+/// An upstream that rejects everything, the way a provider does for a bad key.
+async fn unauthorized_upstream() -> impl IntoResponse {
+    (
+        StatusCode::UNAUTHORIZED,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        r#"{"error":{"message":"Incorrect API key provided","type":"invalid_request_error"}}"#,
+    )
+}
+
+#[tokio::test]
+async fn an_upstream_error_is_forwarded_but_never_captured_as_evidence() {
+    // Found on the first live run: a 401 became an eval item with an empty
+    // baseline, which no grader can tell apart from a model that said nothing.
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("captures");
+    let (addr, _state) = gateway(&log, post(unauthorized_upstream)).await;
+
+    for stream in [false, true] {
+        let resp = reqwest::Client::new()
+            .post(format!("http://{addr}/v1/chat/completions"))
+            .json(&body(stream))
+            .send()
+            .await
+            .unwrap();
+        // The client sees the provider's own error, untouched.
+        assert_eq!(resp.status(), 401);
+        assert!(resp.text().await.unwrap().contains("Incorrect API key"));
+    }
+    // Give the off-path writer every chance to be wrong.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let store = CaptureStore::open(&log, &[3u8; 32]).unwrap();
+    assert!(
+        store.is_empty().unwrap(),
+        "an error response must not become a baseline"
+    );
+}

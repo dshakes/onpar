@@ -523,3 +523,29 @@ def test_prove_replays_sessions_against_the_candidate_and_reports_the_path(tmp_p
     step_two = [b for b in seen if any(m.get("role") == "tool" for m in b["messages"])]
     assert len(step_two) == 2
     assert step_two[-1]["messages"][-1]["tool_call_id"] == "cand-9"
+
+
+# --- an upstream error is not an answer ---------------------------------------------
+
+
+def test_an_upstream_error_capture_is_dropped_from_the_eval_set_and_said_so():
+    """Found on the first live run: a 401 before the key was set became an eval
+    item whose baseline was "". Older gateways wrote those; distill drops them."""
+    bad = {
+        "request_id": "e1",
+        "model": "gpt-4o-mini",
+        "messages": [USER],
+        "response": "",
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "tools": [],
+        "tool_calls": [],
+        "response_format": None,
+    }
+    doc, rep = distill([*rows(), bad], budget=10, min_per_cluster=1)
+    assert rep.errors == 1 and "upstream errors" in rep.render()
+    assert all(i["item_id"] != "e1" for i in doc["items"])
+    # A legitimate empty reply that called a tool is an answer, and stays.
+    assert any(i["baseline_tool_calls"] for i in doc["items"])
+    with pytest.raises(ValueError, match="every one of the 1 captures"):
+        distill([bad], budget=10, min_per_cluster=1)

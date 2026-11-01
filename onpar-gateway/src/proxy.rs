@@ -578,7 +578,18 @@ async fn handle_route(
         HeaderValue::from_str(&served_by).unwrap_or_else(|_| HeaderValue::from_static("unknown")),
     );
 
-    let pending_capture = st.capturing().then(|| {
+    // An upstream error is not the incumbent's answer. Found on the first live
+    // run: a 401 from a request sent before the key was set was captured as an
+    // empty response, and `distill` made it a cluster whose baseline was "".
+    // Nothing downstream can tell that apart from a model that said nothing,
+    // so the record must not exist. The request is still metered above.
+    if !status.is_success() {
+        tracing::warn!(
+            status = status.as_u16(),
+            "upstream error: not captured as evidence"
+        );
+    }
+    let pending_capture = (st.capturing() && status.is_success()).then(|| {
         let request_id = headers
             .get("x-request-id")
             .and_then(|v| v.to_str().ok())
