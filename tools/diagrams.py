@@ -1819,12 +1819,20 @@ def agent_surface() -> None:
     migration and *structurally cannot* move traffic. That is a property of the
     surface, so it is worth drawing as one.
     """
+    import sys
+
+    sys.path.insert(0, str(ROOT / "src"))
+    from onpar.mcp import TOOLS  # the count comes from the server, so it cannot go stale
+
+    words = "zero one two three four five six seven eight nine ten eleven twelve"
+    names = words.split()
+    count = names[len(TOOLS)].capitalize() if len(TOOLS) < len(names) else str(len(TOOLS))
     W, H = 860, 400
     p = head(
         W,
         H,
         "The agent surface, and its wall",
-        "Ten read-only tools, receipts and eval sets as resources confined to one "
+        f"{count} read-only tools, receipts and eval sets as resources confined to one "
         "root, and three pre-built workflows. No verb moves production traffic.",
     )
     cols = [
@@ -1833,7 +1841,7 @@ def agent_surface() -> None:
             [
                 "fit · where · explain",
                 "advise · catalog · build",
-                "distill · prove",
+                "distill · prove · learn",
                 "receipt · guard",
             ],
         ),

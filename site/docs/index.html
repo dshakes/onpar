@@ -368,6 +368,9 @@ eval result moves production traffic without a human.</pre>
 <!-- ══════════ EDUCATION ══════════ -->
 <hr>
 <h2 id="edu-why"><i class="chip"></i>Learn: why a GPU at all</h2>
+<div class="note"><p>Prefer it on your own numbers? <code>onpar learn basics</code> walks the same
+  ground in fifteen lessons where every figure is computed by the solver for the machine you are
+  on. The chapters below are the written version, with the diagrams.</p></div>
 <p>Generating one token means multiplying your input by every weight in the model. A 30-billion
   parameter model at 8 bits is ~30 GB of numbers, and you read <em>all of them</em> to produce
   <em>one</em> token. Do that 50 times a second and you need to move 1.5 TB/s.</p>
@@ -1294,8 +1297,18 @@ Qwen3 30B-A3B (MoE) @ q8, 32,768 ctx, concurrency 8
 <h2 id="cli">CLI reference</h2>
 <p>Everything below is registered today — <code>onpar --help</code> is the authority, and this
   list is checked against it by a test.</p>
-<pre><span class="c">## decide</span>
+<pre><span class="c">## start here</span>
+<span class="u">onpar</span>              no verb: describe what you are building, answer one question at a time
+<span class="u">onpar doctor</span>       is this machine ready for the whole loop? gateway, extension, engine
+<span class="u">onpar learn</span>        inference basics and intermediate, every figure from this machine
+  basics / intermediate   the two tracks; add a number for one lesson
+  --model MODEL        use this catalogue model as the worked example
+<span class="u">onpar version</span>      what you have, and where it came from
+<span class="u">onpar upgrade</span>      how to move, for the way you installed it
+
+<span class="c">## decide</span>
 <span class="u">onpar build "coding assistant for 20 engineers"</span>   drive the whole loop
+  --tool-calling       emit the tool-call parser flags the model family needs
   --context 32k        plan for this context length
   --concurrency 8      plan for this many simultaneous requests
   --ttft-ms / --itl-ms latency budgets to check the plan against
@@ -1334,8 +1347,24 @@ Qwen3 30B-A3B (MoE) @ q8, 32,768 ctx, concurrency 8
 <span class="u">onpar desktop</span>      install a double-clickable launcher
 
 <span class="c">## trust</span>
+<span class="u">onpar observe</span>       capture your traffic through a local proxy; redacted before disk
+  --upstream URL       the provider you use today; OpenAI chat, Responses and Anthropic Messages
+  --port 8787          where your app points instead; --candidate shadows a second backend
+<span class="u">onpar distill</span>       cluster captures by task shape into an eval set; links agent sessions
+  --import FILE        Langfuse or OpenAI request/response exports; redacted on the way in
+  --budget N           total eval items to sample
 <span class="u">onpar prove EVALSET</span>  run the eval suite and print the verdict
+  --candidate-endpoint URL   the open model under test, e.g. http://127.0.0.1:8000/v1
+  --replay-sessions    replay each agent session end to end from the recording
+  --judge-sample LEDGER      record what the judge saw, for a blind human check
+  --judge-labels LEDGER      a ledger `onpar label` worked through; agreement is measured
+  --incumbent-cost / --candidate-cost / --traffic-window   the money, as a range
+<span class="u">onpar label LEDGER</span>  blind A/B over the judge's calls; the human-agreement rate
+<span class="u">onpar measure</span>       tok/s and TTFT of a live endpoint against its roofline estimate
+<span class="u">onpar migrate</span>       one step of the migration per run; --status says where it is
 <span class="u">onpar receipt</span>       render or verify a migration receipt
+<span class="u">onpar brief RECEIPT</span> one self-contained page for whoever signs off; what is unproven first
+  --out FILE           write the page here instead of stdout
 <span class="u">onpar guard</span>         check whether a receipt still holds
 <span class="u">onpar watch</span>         discover new models on a schedule; stages, never publishes
 <span class="u">onpar discover</span>      trending models not yet in the catalogue

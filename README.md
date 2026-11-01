@@ -19,7 +19,7 @@ leaderboard, on your own captured requests — that is one more command, and it
 answers per cluster with confidence intervals instead of a shrug.**
 
 [![status](https://img.shields.io/badge/status-beta-22d3ee?style=flat-square)](docs/50-roadmap.md)
-[![tests](https://img.shields.io/badge/tests-2524-34d399?style=flat-square)](#verification)
+[![tests](https://img.shields.io/badge/tests-2527-34d399?style=flat-square)](#verification)
 [![license](https://img.shields.io/badge/license-Apache--2.0-a78bfa?style=flat-square)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-read-fbbf24?style=flat-square)](https://dshakes.github.io/onpar/docs/)
 
@@ -32,6 +32,13 @@ would do, and cannot prove it. Engineers get the arithmetic, the receipts and
 the serving config. Everyone else gets a conversation: run `onpar` with no
 arguments and describe what you are building, and `onpar learn` teaches the
 inference basics using the numbers of the machine you are sitting at.
+
+| if you are… | start with | you get |
+|---|---|---|
+| **new to all of this** | `onpar` | a conversation: say what you are building, answer one question at a time, walk away with a model, a quantisation and the memory it needs |
+| **curious how it works** | `onpar learn basics` | fifteen lessons where every figure is computed for the machine you are on, basics then intermediate |
+| **an engineer with traffic** | `onpar doctor` | the loop: observe, distill, fit, prove, migrate, each stage able to say no |
+| **an agent** | `onpar-mcp` | eleven read-only tools, including `onpar_learn`; none can move production traffic |
 
 **What is different.**
 
@@ -455,10 +462,10 @@ nothing installed; a test fails if anything networked is even imported.
 ```bash
 cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2227 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2230 Python
 ```
 
-**2524 tests.** 2227 Python, 297 Rust. Twenty-six of the Python tests skip on a
+**2527 tests.** 2230 Python, 297 Rust. Twenty-six of the Python tests skip on a
 bare machine. Eleven are environmental: nine need the compiled extension (`maturin
 develop` in `onpar-py/` turns them on), and two ask vLLM and SGLang for their
 own flags, which needs those engines installed. CI runs both inside the engines'
@@ -472,7 +479,7 @@ tick. The Rust core denies `unwrap`/`expect`/`panic!`/slice-indexing at the lint
 ```bash
 cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2227 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2230 Python
 ```
 
 Every module carries an assert-based `demo()` self-check runnable via

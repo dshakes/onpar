@@ -2254,14 +2254,9 @@ Or describe what you are building: `onpar` with no verb asks only what it needs 
 """
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The whole CLI surface, so docs and tests can read it without parsing anything."""
     from . import __version__
-    from .events import configure
-
-    # Reads ONPAR_LOG and does nothing if it is unset, which is the default.
-    # Here rather than in each command, because the interesting runs are the
-    # ones that failed somewhere between two commands.
-    configure()
 
     p = argparse.ArgumentParser(
         prog="onpar",
@@ -2829,7 +2824,18 @@ def main(argv: list[str] | None = None) -> int:
     kn.add_argument("--drift", help="what you expect to change, if not bit-identical")
     kn.add_argument("--out", help="output directory (default: the plugin name)")
     kn.set_defaults(fn=cmd_kernel)
+    return p
 
+
+def main(argv: list[str] | None = None) -> int:
+    from .events import configure
+
+    # Reads ONPAR_LOG and does nothing if it is unset, which is the default.
+    # Here rather than in each command, because the interesting runs are the
+    # ones that failed somewhere between two commands.
+    configure()
+
+    p = build_parser()
     args = p.parse_args(argv)
     if getattr(args, "cmd", None) is None:
         return _converse(p)

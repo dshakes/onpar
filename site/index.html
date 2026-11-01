@@ -458,7 +458,7 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="n grad">2524</div><div class="l">tests · Rust + Python</div></div>
+    <div class="stat"><div class="n grad">2527</div><div class="l">tests · Rust + Python</div></div>
     <div class="stat"><div class="n">0</div><div class="l">bytes of telemetry, by design</div></div>
     <div class="stat"><div class="n">9</div><div class="l">diagrams, palette-validated</div></div>
     <div class="stat"><div class="n">7</div><div class="l">engines planned for and emitted</div></div>
@@ -816,6 +816,30 @@
     because there is no onpar formula in the tap; a tab advertising one would be the
     same defect as before.</p></div>
 
+  <div class="cards" style="margin-bottom:28px">
+    <div class="card">
+      <div class="cardtop"><span class="ico">💬</span><span class="tag ok">no jargon</span></div>
+      <h3>New to all of this</h3>
+      <p>Type <code>onpar</code> and describe what you are building. It asks one question
+        at a time, only when the answer changes the plan, and you leave with a model, a
+        quantisation and the memory it needs.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">📐</span><span class="tag ok">your numbers</span></div>
+      <h3>Curious how it works</h3>
+      <p><code>onpar learn basics</code> is fifteen lessons, basics then intermediate, where
+        every figure is computed by the solver for the machine you are on. A 24 GB GPU and a
+        128 GB Mac get different arithmetic and reach different conclusions.</p>
+    </div>
+    <div class="card">
+      <div class="cardtop"><span class="ico">🩺</span><span class="tag ok">the loop</span></div>
+      <h3>An engineer with traffic</h3>
+      <p><code>onpar doctor</code> checks the gateway, the extension and an engine in the order
+        the loop needs them, and prints the next command. Then observe, distill, fit, prove,
+        migrate. Each stage can say no.</p>
+    </div>
+  </div>
+
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-t="uvx">uvx</button>
     <button class="tab" role="tab" aria-selected="false" data-t="pip">pip / pipx</button>
@@ -847,9 +871,9 @@ const CMDS = {
           'size what runs on this machine — nothing cloned, nothing installed'],
          ['uvx --from onpar==1.3.4 onpar fit --context 32k --concurrency 8',
           'pinned to a build that stays put; unpinned always fetches the newest'],
-         ['uv tool install onpar',
-          'or put the onpar command on your PATH']],
-  pip:  [['pip install onpar', 'gives you the onpar command; needs Python 3.11+'],
+         ['uv tool install onpar && onpar doctor',
+          'or put the onpar command on your PATH, and check the machine is ready for the whole loop']],
+  pip:  [['pip install onpar && onpar doctor', 'gives you the onpar command and checks the machine; needs Python 3.11+'],
          ['pipx install onpar', 'or isolated from your other packages']],
   // Live on npm since 0.1.2. This tab spent four releases saying "not published
   // yet, this 404s today" AFTER it had shipped — the mirror image of the brew
