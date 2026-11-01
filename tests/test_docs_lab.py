@@ -457,11 +457,13 @@ def _published_test_counts() -> dict[str, int]:
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text()
     site = (root / "site" / "index.html").read_text()
+    pitch = (root / "docs" / "60-pitch.md").read_text()
     found = {}
     for name, text, pattern in (
         ("readme badge", readme, r"badge/tests-(\d+)-"),
         ("readme prose", readme, r"\*\*(\d[\d,]*) tests\.\*\*"),
         ("site stat", site, r'<div class="n grad">(\d+)</div><div class="l">tests'),
+        ("pitch status", pitch, r"(\d[\d,]*) tests \(\d+ Python"),
     ):
         m = re.search(pattern, text)
         assert m, f"{name}: no test count found — did the markup change?"
@@ -470,11 +472,57 @@ def _published_test_counts() -> dict[str, int]:
 
 
 def test_every_published_test_count_agrees():
-    """Three surfaces, one number. They have disagreed before."""
+    """Four surfaces, one number. They have disagreed before."""
     counts = _published_test_counts()
     assert len(set(counts.values())) == 1, "published test counts disagree: " + ", ".join(
         f"{k}={v}" for k, v in counts.items()
     )
+
+
+def _published_test_breakdowns() -> dict[str, tuple[int, int, int]]:
+    """Surfaces that state a (python, rust) breakdown, as (python, rust, total)."""
+    root = Path(__file__).resolve().parents[1]
+    site = (root / "site" / "index.html").read_text()
+    pitch = (root / "docs" / "60-pitch.md").read_text()
+    found = {}
+    for name, text, total_pattern, breakdown_pattern in (
+        (
+            "site stat",
+            site,
+            r'<div class="n grad">(\d+)</div><div class="l">tests',
+            r"(\d+) Python, (\d+) Rust",
+        ),
+        (
+            "pitch status",
+            pitch,
+            r"(\d[\d,]*) tests \(\d+ Python",
+            r"\((\d+) Python, (\d+) Rust\)",
+        ),
+    ):
+        total = re.search(total_pattern, text)
+        breakdown = re.search(breakdown_pattern, text)
+        assert total and breakdown, f"{name}: no test count breakdown found"
+        found[name] = (
+            int(breakdown.group(1)),
+            int(breakdown.group(2)),
+            int(total.group(1).replace(",", "")),
+        )
+    return found
+
+
+def test_every_published_test_breakdown_sums_to_its_total():
+    """A surface that states 'N tests (A Python, B Rust)' must have A + B == N.
+
+    Caught a real regression: the site stat said 2529 tests but 2230 Python +
+    297 Rust = 2527, a mismatch invisible to a reader skimming either number
+    alone.
+    """
+    bad = [
+        f"{name}: {py} Python + {rust} Rust = {py + rust}, published total is {total}"
+        for name, (py, rust, total) in _published_test_breakdowns().items()
+        if py + rust != total
+    ]
+    assert not bad, "; ".join(bad)
 
 
 def test_published_test_count_is_not_stale(request):
@@ -2030,7 +2078,7 @@ def test_every_internal_anchor_on_the_site_resolves(page):
     docs_ids = set(re.findall(r'\bid="([^"]+)"', (root / "site/docs/index.html").read_text()))
     dead = []
     for href in re.findall(r'href="([^"]+)"', html):
-        if href.startswith("#") and href != "#":
+        if href.startswith("#"):
             if href[1:] not in ids:
                 dead.append(href)
         elif href.startswith("docs/#") and href[6:] not in docs_ids:

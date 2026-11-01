@@ -128,7 +128,7 @@ Pricing anchors to spend migrated, not seats. The north-star metric is dollars o
 
 ## Status
 
-**Beta, built in the open.** Version 1.3.4. 2527 tests (2230 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
+**Beta, built in the open.** Version 1.3.4. 2529 tests (2232 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
 
 **Biggest open risk, stated plainly:** `observe` has not yet been run against real production traffic. The invariants are tested. The live run is the next proof, and it needs a real upstream and a willing team.
 
