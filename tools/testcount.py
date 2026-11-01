@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Count the suite, and write that count onto every surface that publishes it.
 
-The test count appears in three places — the README badge, the README prose, and
-the landing page's stat strip. They drifted to 478 / 668 / 675 without anything
-noticing, because no check compared them to each other or to the suite.
+The test count appears in four places — the README badge, the README prose, the
+landing page's stat strip, and the pitch doc's status line. They drifted to
+478 / 668 / 675 without anything noticing, because no check compared them to
+each other or to the suite.
 
-`tests/test_docs_lab.py` now compares all three. This script is the other half:
+`tests/test_docs_lab.py` now compares all four. This script is the other half:
 the one command that makes them right, so keeping them honest costs a command
 rather than three careful edits.
 
@@ -35,6 +36,11 @@ SURFACES: tuple[tuple[str, str], ...] = (
     ("README.md", r"(badge/tests-)(\d+)(-)"),
     ("README.md", r"(\*\*)(\d[\d,]*)( tests\.\*\*)"),
     ("site/index.html", r'(<div class="n grad">)(\d+)(</div><div class="l">tests)'),
+    # docs/60-pitch.md states the same total a fourth time, in its own prose.
+    # It was not registered here, so `--write` left it stale while the other
+    # three surfaces moved: "2527 tests (2230 Python, 297 Rust)" sat untouched
+    # next to a freshly written 2529 on the site and in the README.
+    ("docs/60-pitch.md", r"(\. )(\d[\d,]*)( tests \()"),
 )
 
 #: The per-runner counts, which live in the Verification block's comments and
@@ -59,6 +65,14 @@ SPLIT_SURFACES: tuple[tuple[str, str, str], ...] = (
     # a reader meets first.
     ("README.md", "python", r"( tests\.\*\* )(\d[\d,]*)( Python, )"),
     ("README.md", "rust", r"( Python, )(\d[\d,]*)( Rust\.)"),
+    # site/index.html and docs/60-pitch.md state the same split a fifth and
+    # sixth time. Neither was registered here, so the site stat's "2529 tests
+    # ... 2230 Python, 297 Rust" summed to 2527 — a mismatch invisible to a
+    # reader skimming either number alone, and invisible to `--write` too.
+    ("site/index.html", "python", r'(tests · )(\d[\d,]*)( Python, )'),
+    ("site/index.html", "rust", r'( Python, )(\d[\d,]*)( Rust</div>)'),
+    ("docs/60-pitch.md", "python", r"(\()(\d[\d,]*)( Python, )"),
+    ("docs/60-pitch.md", "rust", r"( Python, )(\d[\d,]*)( Rust\))"),
 )
 
 
