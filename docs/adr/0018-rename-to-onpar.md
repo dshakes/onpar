@@ -4,7 +4,7 @@
 
 ## Context
 
-The product was called `clickllm`. The name was wrong in three ways, and
+The product shipped under a previous name, retired and not recorded here. The name was wrong in three ways, and
 [docs/70-naming.md](../70-naming.md) had already recorded that it should go:
 
 - **It mis-signalled the category.** "Click" sells convenience — a wizard, a button,
@@ -22,7 +22,7 @@ not verb. The thesis was right and the lexical form was unusable.
 
 Two further facts made this the moment to move rather than later:
 
-1. **Nobody is using the product yet.** No PyPI installs to strand, no `~/.clickllm` state
+1. **Nobody is using the product yet.** No PyPI installs to strand, no `~/.<old-name>` state
    to migrate, no deployed `InferenceWorkload` CRs to convert. Every compatibility
    obligation that would normally make a rename expensive is absent. That is a window that
    closes permanently at the first real user.
@@ -48,20 +48,20 @@ dual-prefix env-var reads. Specifically:
 
 | Surface | From | To |
 |---|---|---|
-| Distribution | `clickllm-cli` | `onpar` |
-| Console scripts | `clickllm`, `clickllm-mcp` | `onpar`, `onpar-mcp` |
-| Python package | `src/clickllm/` | `src/onpar/` |
-| Rust crates | `clickllm-{core,gateway,py}` | `onpar-{core,gateway,py}` |
-| Env vars (11) | `CLICKLLM_*` | `ONPAR_*` |
-| State dir | `~/.clickllm/` | `~/.onpar/` |
-| K8s API group | `clickllm.dev` | `onpar.dev` |
-| K8s managed-by | `clickllm` | `onpar` |
-| Box media type | `application/vnd.clickllm.box.v1+json` | `application/vnd.onpar.box.v1+json` |
-| MCP tools (14) | `clickllm_*` | `onpar_*` |
-| HTTP headers | `x-clickllm-{cluster,backend}` | `x-onpar-{cluster,backend}` |
-| systemd units | `clickllm-{vllm,sglang}.service` | `onpar-{vllm,sglang}.service` |
+| Distribution | `<old-name>-cli` | `onpar` |
+| Console scripts | `<old-name>`, `<old-name>-mcp` | `onpar`, `onpar-mcp` |
+| Python package | `src/<old-name>/` | `src/onpar/` |
+| Rust crates | `<old-name>-{core,gateway,py}` | `onpar-{core,gateway,py}` |
+| Env vars (11) | `<OLD_NAME>_*` | `ONPAR_*` |
+| State dir | `~/.<old-name>/` | `~/.onpar/` |
+| K8s API group | `<old-name>.dev` | `onpar.dev` |
+| K8s managed-by | `<old-name>` | `onpar` |
+| Box media type | `application/vnd.<old-name>.box.v1+json` | `application/vnd.onpar.box.v1+json` |
+| MCP tools (14) | `<old-name>_*` | `onpar_*` |
+| HTTP headers | `x-<old-name>-{cluster,backend}` | `x-onpar-{cluster,backend}` |
+| systemd units | `<old-name>-{vllm,sglang}.service` | `onpar-{vllm,sglang}.service` |
 
-**The `-cli` suffix is dropped.** It existed only because PyPI rejected bare `clickllm` as
+**The `-cli` suffix is dropped.** It existed only because PyPI rejected the bare previous name as
 too close to the existing `click-llm` (recorded at `.github/workflows/release.yml:137-138`).
 `onpar`, `on-par` and `on_par` — one name under PEP 503 normalisation — are all free, so
 package name, command name and import name are finally the same string.
@@ -70,8 +70,8 @@ package name, command name and import name are finally the same string.
 
 **Breaking, and deliberately so:**
 
-- Any exported `CLICKLLM_*` variable stops being read. No fallback.
-- `~/.clickllm/` is orphaned, including the capture key, which is unrecoverable. Acceptable
+- Any exported `<OLD_NAME>_*` variable stops being read. No fallback.
+- `~/.<old-name>/` is orphaned, including the capture key, which is unrecoverable. Acceptable
   only because no such directory exists in the wild.
 - Renaming the K8s API group changes the CRD name, so `kubectl apply` would create a
   *second* CRD rather than update the first; CRs under the old group become invisible to the
@@ -87,12 +87,12 @@ rather than a find-replace — recorded because they are the shape that recurs h
 
 - `onpar-py/Cargo.toml` `[lib] name` and the `#[pymodule]` init symbol must rename
   *together*; mismatched, the extension compiles clean and fails at **import** time.
-- `Dockerfile` copies `libclickllm_core.rlib`, a filename derived from the crate name.
-- `tools/bump.py` hardcodes `../clickllm-core` inside a regex; unmatched, it **silently
+- `Dockerfile` copies `lib<old-name>_core.rlib`, a filename derived from the crate name.
+- `tools/bump.py` hardcodes `../<old-name>-core` inside a regex; unmatched, it **silently
   no-ops** and ships a mis-versioned release.
 - **Two negative assertions pass vacuously after a rename** —
   `tests/test_box.py` (boxes stay dependency-free) and
-  `clickllm-core/src/runtime/vllm.rs` (generated config never shells back into the tool,
+  `<old-name>-core/src/runtime/vllm.rs` (generated config never shells back into the tool,
   NFR-4). Renaming the string alone would retire both guarantees while staying green. Each
   was re-verified by injecting a violation and confirming the test fails.
 
@@ -114,7 +114,7 @@ error strings follow the console-script rename for free.
 
 ## Alternatives rejected
 
-- **Keep `clickllm`.** Rejected: the naming doc's case against it stands, and the cost of
+- **Keep the previous name.** Rejected: the naming doc's case against it stands, and the cost of
   renaming only rises with adoption. This was the last cheap moment.
 - **Parity** — the previous recommendation. Rejected: live company, and does not verb.
 - **Understudy** — the best story of any candidate. Rejected: [Understudy Labs
@@ -122,10 +122,10 @@ error strings follow the console-script rename for free.
   the pitch.
 - **Bare `par`.** Rejected: three letters is unregistrable, unsearchable, and collides with
   `$PATH` binaries.
-- **Rename the product but keep `clickllm.dev` as the API group**, to avoid a K8s break.
+- **Rename the product but keep `<old-name>.dev` as the API group**, to avoid a K8s break.
   Rejected: it buys nothing when there are no deployed CRs, and leaves an `onpar` tool
-  permanently emitting `clickllm.dev` resources — the same duplicated-fact shape that has
+  permanently emitting `<old-name>.dev` resources — the same duplicated-fact shape that has
   bitten this repo before.
-- **Ship a compatibility layer** (dual-prefix env vars, a `clickllm-cli` shim on PyPI,
+- **Ship a compatibility layer** (dual-prefix env vars, a `<old-name>-cli` shim on PyPI,
   dual-served CRD groups). Rejected: every line of it is dead code written for users who do
   not exist, and it would have to be deleted later anyway.

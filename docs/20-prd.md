@@ -137,6 +137,8 @@ Open models ship weekly (Kimi K3 landed 2026-07-16). Watch releases → auto-run
 | FR-17 | Watch model releases; auto-re-eval; emit promotion proposals | 7 |
 | FR-18 | MCP server exposing the loop as tools for Claude Code / Cursor | 8 |
 | FR-19 | Everything driveable from CLI, non-interactively, in CI | 8 |
+| FR-19a | `onpar doctor`: one command reports whether the gateway, the capture extension and an engine are present, in the order the loop needs them, and prints the next command | 8 |
+| FR-19b | `onpar learn`: a basics and an intermediate track on inference, every figure computed by the fit solver for the host it runs on; also reachable as the `onpar_learn` MCP tool | 8 |
 
 ### Non-functional
 

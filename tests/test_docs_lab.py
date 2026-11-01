@@ -1951,3 +1951,67 @@ def test_fit_explorer_rows_match_solver(profile_id, ctx, conc, model_id, explore
             f"{model_id} @ {key}: rejected total_gb"
         )
         assert reason_json, f"{model_id} @ {key}: rejected model must have a non-empty reason"
+
+
+# --- ...and the CLI reference lists every command, with flags that exist ---------
+
+
+def _cli_reference() -> str:
+    """The `<pre>` under the docs site's `CLI reference` heading, tags stripped."""
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "site/docs/index.html").read_text()
+    m = re.search(r'<h2 id="cli">.*?<pre>(.*?)</pre>', html, re.S)
+    assert m, "docs site lost its CLI reference"
+    return re.sub(r"<[^>]+>", "", m.group(1))
+
+
+def test_the_cli_reference_lists_every_registered_command():
+    """The page says the list 'is checked against it by a test'. For a year the
+    test only ran one way — every listed command had to exist — so nine real
+    verbs (observe, distill, prove's flags, migrate, measure, doctor, learn,
+    label, version, upgrade) were simply absent and nothing complained."""
+    listed = set(re.findall(r"^onpar(?: ([a-z][a-z0-9-]*))?", _cli_reference(), re.M))
+    missing = sorted(_cli_commands() - listed)
+    assert not missing, f"registered but absent from the CLI reference: {missing}"
+
+
+def test_every_flag_in_the_cli_reference_exists_on_its_command():
+    """A documented `--flag` is a claim about the parser. Check each one against
+    the verb it is listed under, the way a reader would type it."""
+    from onpar import cli
+
+    parser = cli.build_parser()
+    subs = next(a for a in parser._subparsers._group_actions if hasattr(a, "choices"))  # noqa: SLF001
+    verb, bad = None, []
+    for line in _cli_reference().splitlines():
+        head = re.match(r"^onpar(?: ([a-z][a-z0-9-]*))?", line)
+        if head:
+            verb = head.group(1)
+            line = line[head.end() :]
+        if verb is None or verb not in subs.choices:
+            continue
+        known = {o for a in subs.choices[verb]._actions for o in a.option_strings}  # noqa: SLF001
+        for flag in re.findall(r"(?<![\w-])--[a-z][a-z0-9-]*", line):
+            if flag not in known:
+                bad.append(f"onpar {verb} {flag}")
+    assert not bad, f"flags documented but not registered: {bad}"
+
+
+def test_the_previous_product_name_appears_nowhere():
+    """The product was renamed (ADR-0018). The owner asked for zero references to the
+    old name anywhere in the tree — docs and ADRs included — so this is spelled by
+    concatenation to keep the test itself honest."""
+    root = Path(__file__).resolve().parents[1]
+    old = "click" + "llm"
+    skip = {".git", "target", "node_modules", ".venv", "__pycache__", ".serena"}
+    hits = []
+    for f in root.rglob("*"):
+        if not f.is_file() or skip & set(f.relative_to(root).parts):
+            continue
+        try:
+            text = f.read_text(errors="ignore").lower()
+        except OSError:
+            continue
+        if old in text:
+            hits.append(str(f.relative_to(root)))
+    assert not hits, f"the previous product name still appears in: {hits}"

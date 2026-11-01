@@ -25,10 +25,10 @@ and fixes both problems.
 - **The second meaning is also ours.** In finance, *at par* is break-even. Quality parity
   and cost parity are the two axes the equivalence matrix computes, and one word carries both.
 - **Package name == command name == import name.** `pip install onpar` → `onpar`. The old
-  distribution carried a `-cli` suffix only because PyPI rejected bare `clickllm` as too
+  distribution carried a `-cli` suffix only because PyPI rejected the bare previous name as too
   close to the existing `click-llm`; `onpar` has no such neighbour, so the workaround goes.
 
-## Why `clickllm` had to go
+## Why the previous name had to go
 
 - **Mis-signals the category.** "Click" sells convenience — one-click deploy, a wizard, a
   button. This product sells *evidence*: an eval set distilled from your traffic, a score
@@ -63,7 +63,7 @@ and fixes both problems.
 | ~~**Twin**~~ | The open twin of your closed model. | **disqualified**: [Twin Labs](https://techcrunch.com/2024/01/31/twin-labs-automates-repetitive-tasks-by-letting-ai-take-over-your-mouse-cursor) |
 | ~~**Yardstick**~~ | — | **disqualified**: an existing YC company, plus several firms on the name |
 | ~~**Dyno**~~ / ~~**Crucible**~~ / ~~**Endpoint**~~ | — | **disqualified**: Heroku, Perforce/Cisco, and the entire security industry respectively |
-| ~~**clickllm**~~ | — | **disqualified**: mis-signals category, saturated suffix, sells the commodity half |
+| ~~**the previous name**~~ | — | **disqualified**: mis-signals category, saturated suffix, sells the commodity half |
 
 ## Collisions accepted
 
