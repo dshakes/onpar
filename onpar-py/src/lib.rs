@@ -147,7 +147,14 @@ fn capture_to_dict(py: Python<'_>, c: &Capture) -> PyResult<Py<PyDict>> {
     // the seam test asserts the keys here are exactly the fields there.
     d.set_item("latency_ms", c.duration_ms)?;
     d.set_item("tools", json_to_py(py, &c.tools)?)?;
-    d.set_item("tool_calls", c.tool_calls.clone())?;
+    let calls_list = PyList::empty(py);
+    for tc in &c.tool_calls {
+        let call_dict = PyDict::new(py);
+        call_dict.set_item("name", &tc.name)?;
+        call_dict.set_item("arguments", &tc.arguments)?;
+        calls_list.append(call_dict)?;
+    }
+    d.set_item("tool_calls", calls_list)?;
     d.set_item("response_format", c.response_format.clone())?;
     let redacted = PyDict::new(py);
     for (kind, n) in &c.redacted.counts {

@@ -1,15 +1,18 @@
 //! The HTTP datapath.
 //!
-//! One route that matters: `POST /v1/chat/completions`. It decides a backend,
-//! forwards the request, and returns the upstream response — **streaming bytes
-//! through as they arrive**, never buffering, while metering usage in flight.
+//! Three routes share the same backend selection, metering, and capture path:
 //!
-//! The tee is the interesting part. A naive proxy collects the body, parses it,
-//! then forwards it: correct, and it destroys time-to-first-token. Here each
-//! chunk is handed to the client and to the [`Meter`] in the same pass, so the
-//! client sees the upstream's own latency and we still get a cost figure.
+//! - `POST /v1/chat/completions` — OpenAI chat
+//! - `POST /v1/messages`         — Anthropic Messages API
+//! - `POST /v1/responses`        — OpenAI Responses API
+//!
+//! Each route is a thin wrapper around `handle_route`, which carries a
+//! `ShapeOps` struct describing how to extract capture fields from that API's
+//! wire format. Bytes are forwarded to the upstream unchanged; normalisation
+//! happens only in the capture layer.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use axum::body::{Body, Bytes};
@@ -21,37 +24,113 @@ use axum::{Json, Router as AxumRouter};
 use futures_util::StreamExt;
 use parking_lot::Mutex;
 
-use crate::capture::store::{self, Capture, CaptureStore};
+use crate::capture::normalize;
+use crate::capture::store::{self, Capture, CaptureStore, ToolCall};
 use crate::meter::{Meter, Metered};
 use crate::router::{Decision, Router};
-use crate::sse::Decoder;
+use crate::sse::{Decoder, Event};
+
+/// Per-process random prefix for generated request IDs.
+static REQUEST_ID_PREFIX: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
+    use chacha20poly1305::aead::rand_core::RngCore;
+    chacha20poly1305::aead::OsRng.next_u32()
+});
+
+static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn next_request_id() -> String {
+    let n = REQUEST_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("gw-{:08x}-{n:06}", *REQUEST_ID_PREFIX)
+}
+
+/// `fn(&[u8]) -> (Option<u64>, Option<u64>)` — token extractor for a body.
+type BodyTokensFn = fn(&[u8]) -> (Option<u64>, Option<u64>);
+/// `fn(&Event) -> Option<(index, name, args_fragment)>` — tool-call fragment extractor.
+type DeltaToolCallFn = fn(&Event) -> Option<(usize, Option<String>, String)>;
+/// `fn(&Event) -> (Option<u64>, Option<u64>)` — token extractor for a stream event.
+type StreamTokensFn = fn(&Event) -> (Option<u64>, Option<u64>);
+
+/// Extraction functions for one API shape.
+///
+/// All fields are `Copy` (fn pointers + `&'static str`), so `ShapeOps` can be
+/// captured cheaply by the streaming closure.
+#[derive(Clone, Copy)]
+struct ShapeOps {
+    /// Path appended to the backend base URL when forwarding, e.g. `"chat/completions"`.
+    upstream_path: &'static str,
+    /// Normalise the request body to the capture fields the distiller reads.
+    extract_request: fn(&serde_json::Value) -> normalize::RequestFields,
+    /// Extract response text from a complete (non-streamed) response body.
+    body_text: fn(&[u8]) -> String,
+    /// Extract tool calls from a complete (non-streamed) response body.
+    body_tool_calls: fn(&[u8]) -> Vec<ToolCall>,
+    /// Extract token counts (prompt, completion) from a complete response body.
+    body_tokens: BodyTokensFn,
+    /// Extract text from a single streamed event.
+    delta_text: fn(&Event) -> Option<String>,
+    /// Extract a tool-call fragment from a single streamed event.
+    delta_tool_call: DeltaToolCallFn,
+    /// Extract token counts from a single streamed event.
+    ///
+    /// Returns `(None, None)` for API shapes where the `Meter` handles tokens
+    /// via the standard OpenAI `usage` key (chat completions).
+    stream_tokens: StreamTokensFn,
+}
+
+impl ShapeOps {
+    fn chat() -> Self {
+        Self {
+            upstream_path: "chat/completions",
+            extract_request: normalize::chat_request_fields,
+            body_text: store::body_text,
+            body_tool_calls: store::body_tool_calls,
+            body_tokens: normalize::chat_body_tokens,
+            delta_text: store::delta_text,
+            delta_tool_call: store::delta_tool_call,
+            stream_tokens: normalize::chat_stream_tokens,
+        }
+    }
+
+    fn messages() -> Self {
+        Self {
+            upstream_path: "messages",
+            extract_request: normalize::messages_request_fields,
+            body_text: normalize::messages_body_text,
+            body_tool_calls: normalize::messages_body_tool_calls,
+            body_tokens: normalize::messages_body_tokens,
+            delta_text: normalize::messages_delta_text,
+            delta_tool_call: normalize::messages_delta_tool_call,
+            stream_tokens: normalize::messages_stream_tokens,
+        }
+    }
+
+    fn responses() -> Self {
+        Self {
+            upstream_path: "responses",
+            extract_request: normalize::responses_request_fields,
+            body_text: normalize::responses_body_text,
+            body_tool_calls: normalize::responses_body_tool_calls,
+            body_tokens: normalize::responses_body_tokens,
+            delta_text: normalize::responses_delta_text,
+            delta_tool_call: normalize::responses_delta_tool_call,
+            stream_tokens: normalize::responses_stream_tokens,
+        }
+    }
+}
 
 /// Shared server state.
 pub struct AppState {
-    /// Routing policy.
-    ///
-    /// Behind a lock because M9 changes it on a *running* gateway — a rollback
-    /// that needed a restart would not be a rollback. Reads dominate by many
-    /// orders of magnitude and an uncontended `parking_lot` read is tens of
-    /// nanoseconds, which is nothing against the 15ms budget.
+    /// Current routing table, swapped atomically on reconfiguration.
     pub router: parking_lot::RwLock<Router>,
-    /// Upstream HTTP client. Cloning is cheap and shares the connection pool —
-    /// building one per request would dominate the latency budget.
+    /// Shared HTTP client used for all upstream requests.
     pub client: reqwest::Client,
-    /// Completed request records. Bounded: the datapath must not become a leak.
     records: Mutex<Vec<Record>>,
-    /// Outcomes of mirrored (shadow) requests.
     mirrors: Mutex<Vec<MirrorRecord>>,
-    /// Cap on retained records before the oldest are dropped.
+    /// Ring-buffer capacity for the in-memory record log.
     pub max_records: usize,
-    /// Every phase change applied to this process, oldest first.
     transitions: Mutex<Vec<crate::control::Transition>>,
-    /// Shared secret for the control surface, resolved once at startup. `None`
-    /// leaves it open — see [`crate::control`] for why that is stated loudly.
+    /// Bearer token required for admin endpoints; `None` disables auth.
     pub admin_token: Option<String>,
-    /// Where captured traffic is persisted. `None` — the default — means nothing
-    /// is written. Recording a customer's production prompts is a decision
-    /// someone makes, never something that happens because they started a proxy.
     capture: Option<Arc<CaptureStore>>,
 }
 
@@ -60,8 +139,7 @@ pub struct AppState {
 pub struct Record {
     /// Backend that served the response.
     pub backend: String,
-    /// True when the primary was unreachable and the fallback answered. Surfaced
-    /// so a quietly-degraded deployment is visible rather than merely working.
+    /// True when the primary was unreachable and the fallback answered.
     pub failed_over: bool,
     /// Backend the request was mirrored to, if any.
     pub mirrored_to: Option<String>,
@@ -93,9 +171,7 @@ pub struct MirrorRecord {
     pub duration_ms: u64,
     /// Token accounting for the candidate's response.
     pub metered: Metered,
-    /// Transport failure, if any. A candidate that is down must be visible —
-    /// silently dropping mirror errors would make shadow mode look healthy while
-    /// gathering no evidence at all.
+    /// Transport failure, if any.
     pub error: Option<String>,
 }
 
@@ -115,9 +191,6 @@ impl AppState {
     }
 
     /// Persist redacted traffic to `store`.
-    ///
-    /// Off unless called. See [`crate::capture::store`] for what encryption here
-    /// does and does not protect against.
     #[must_use]
     pub fn with_capture(mut self, store: Arc<CaptureStore>) -> Self {
         self.capture = Some(store);
@@ -129,12 +202,7 @@ impl AppState {
         self.capture.is_some()
     }
 
-    /// Write one exchange, off the request path.
-    ///
-    /// Spawned rather than awaited for the same reason the mirror is: capture is
-    /// evidence-gathering, and a slow disk must never become a slow response. A
-    /// failed write is logged and dropped — refusing to serve because we could
-    /// not record would trade an outage for a missing sample.
+    /// Write one exchange off the request path.
     fn capture(&self, c: Capture) {
         let Some(store) = self.capture.clone() else {
             return;
@@ -148,7 +216,7 @@ impl AppState {
         });
     }
 
-    /// Record a completed request, dropping the oldest once the cap is reached.
+    /// Append a request record to the in-memory ring buffer, evicting the oldest if full.
     pub fn record(&self, r: Record) {
         let mut g = self.records.lock();
         if g.len() >= self.max_records {
@@ -192,9 +260,7 @@ impl AppState {
         self.mirrors.lock().clone()
     }
 
-    /// Record an applied phase change. Unbounded on purpose: these are rare, and
-    /// dropping the oldest would discard exactly the entry an incident review
-    /// needs — the first change, made before anyone was watching.
+    /// Record an applied phase change.
     pub fn record_transition(&self, t: crate::control::Transition) {
         self.transitions.lock().push(t);
     }
@@ -205,12 +271,6 @@ impl AppState {
     }
 }
 
-/// Dispatch a copy of the request to the candidate backend.
-///
-/// Spawned, never awaited by the request handler: the client's latency must not
-/// depend on the candidate, and the candidate's response must never be served.
-/// This is the mechanism shadow mode *is* — computing a mirror decision and
-/// recording it without sending anything would make the safety story a display.
 fn dispatch_mirror(
     st: Arc<AppState>,
     backend: crate::router::Backend,
@@ -218,14 +278,13 @@ fn dispatch_mirror(
     headers: HeaderMap,
     body: Bytes,
     model: String,
+    upstream_path: &'static str,
 ) {
     tokio::spawn(async move {
         let started = Instant::now();
         let decision = Decision {
             serve: backend.clone(),
             mirror: None,
-            // A mirror is evidence-gathering, not service. If the candidate is
-            // unreachable that IS the finding; falling back would hide it.
             fallback: None,
             reason: "mirror",
         };
@@ -238,14 +297,21 @@ fn dispatch_mirror(
             error: None,
         };
 
-        match send(&st, &decision.serve, &parsed, &headers, &body).await {
+        match send(
+            &st,
+            &decision.serve,
+            upstream_path,
+            &parsed,
+            &headers,
+            &body,
+        )
+        .await
+        {
             Ok(resp) => {
                 rec.status = Some(resp.status().as_u16());
                 let mut meter = Meter::new();
                 let mut decoder = Decoder::new();
                 let mut stream = resp.bytes_stream();
-                // Drain the candidate fully: a partially-read response gives a
-                // partial token count, which would understate the comparison.
                 while let Some(chunk) = stream.next().await {
                     match chunk {
                         Ok(b) => {
@@ -269,15 +335,14 @@ fn dispatch_mirror(
     });
 }
 
-/// The local console, embedded in the binary so there is no asset to deploy and
-/// nothing to fetch from a network. It renders only what this gateway actually
-/// recorded — request volume, routing decisions, and reported token usage.
 const CONSOLE_HTML: &str = include_str!("console.html");
 
 /// Build the router. Kept separate from `serve` so tests can drive it directly.
 pub fn app(state: Arc<AppState>) -> AxumRouter {
     AxumRouter::new()
         .route("/v1/chat/completions", post(chat_completions))
+        .route("/v1/messages", post(anthropic_messages))
+        .route("/v1/responses", post(openai_responses))
         .route("/healthz", get(|| async { "ok" }))
         .route("/metrics/requests", get(records))
         .route("/metrics/mirrors", get(mirrors))
@@ -291,7 +356,6 @@ pub fn app(state: Arc<AppState>) -> AxumRouter {
         .with_state(state)
 }
 
-/// Serve the console.
 async fn console() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -307,14 +371,6 @@ async fn mirrors(State(st): State<Arc<AppState>>) -> Json<Vec<MirrorRecord>> {
     Json(st.mirrors())
 }
 
-/// Live engine telemetry for every distinct backend this router can reach.
-///
-/// Scraped on demand rather than polled in the background: a dashboard nobody
-/// has open should not be generating traffic against a production engine, and a
-/// stale cached reading is worse than a fresh one that took 200ms.
-///
-/// Both backends are scraped concurrently — serially, a single unreachable
-/// engine would add its whole timeout to the other's latency.
 async fn engine_telemetry(State(st): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let backends: Vec<(String, String)> = {
         let r = st.router.read();
@@ -332,8 +388,6 @@ async fn engine_telemetry(State(st): State<Arc<AppState>>) -> Json<serde_json::V
     }))
     .await;
 
-    // Read once for the whole response: the host is shared by every backend,
-    // and shelling out per backend would multiply the cost for one answer.
     let host = tokio::task::spawn_blocking(crate::host::probe)
         .await
         .unwrap_or(crate::host::Support::Unavailable {
@@ -341,8 +395,6 @@ async fn engine_telemetry(State(st): State<Arc<AppState>>) -> Json<serde_json::V
         });
     let host_peak = host.peak_memory_used();
     let sys = crate::host::system();
-    // Host starvation is a property of the machine, not of any one backend, so
-    // it is reported once rather than repeated per backend.
     let starved = host.starved_by_host(&sys);
 
     Json(serde_json::json!({
@@ -353,15 +405,10 @@ async fn engine_telemetry(State(st): State<Arc<AppState>>) -> Json<serde_json::V
         "backends": readings
             .into_iter()
             .map(|(name, snap)| {
-                // Contradictions are computed here rather than client-side: the
-                // thresholds are policy and belong next to the numbers they
-                // judge, not duplicated into every surface that renders them.
                 let mut against_plan = snap.contradictions(
                     snap.prefix_hit_rate.is_some(),
                     snap.draft_acceptance.is_some(),
                 );
-                // The one thing engine telemetry structurally cannot report:
-                // memory on the card that belongs to somebody else.
                 if let Some(foreign) = host.foreign_memory(snap.kv_cache_used) {
                     against_plan.push(foreign);
                 }
@@ -382,18 +429,18 @@ async fn engine_telemetry(State(st): State<Arc<AppState>>) -> Json<serde_json::V
     }))
 }
 
-/// Errors the datapath can return to a client.
+/// Errors that the proxy layer can return to the caller.
 #[derive(Debug, thiserror::Error)]
 pub enum ProxyError {
-    /// The request body was not the JSON we need to route on.
+    /// The request body could not be parsed or was structurally invalid.
     #[error("invalid request body: {0}")]
     BadRequest(String),
-    /// The upstream could not be reached.
+    /// The upstream backend returned an error or was unreachable.
     #[error("upstream {backend} unreachable: {source}")]
     Upstream {
-        /// Backend that failed.
+        /// The base URL of the backend that failed.
         backend: String,
-        /// Underlying transport error.
+        /// The underlying reqwest transport or HTTP error.
         #[source]
         source: reqwest::Error,
     },
@@ -405,8 +452,6 @@ impl IntoResponse for ProxyError {
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request_error"),
             Self::Upstream { .. } => (StatusCode::BAD_GATEWAY, "upstream_error"),
         };
-        // OpenAI-shaped error, so existing client SDKs surface it properly rather
-        // than throwing on an unexpected schema.
         let body = serde_json::json!({
             "error": { "message": self.to_string(), "type": kind }
         });
@@ -414,10 +459,39 @@ impl IntoResponse for ProxyError {
     }
 }
 
+// ── Route handlers ────────────────────────────────────────────────────────────
+
 async fn chat_completions(
     State(st): State<Arc<AppState>>,
     headers: HeaderMap,
     body: Bytes,
+) -> Result<Response, ProxyError> {
+    handle_route(st, headers, body, ShapeOps::chat()).await
+}
+
+async fn anthropic_messages(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, ProxyError> {
+    handle_route(st, headers, body, ShapeOps::messages()).await
+}
+
+async fn openai_responses(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, ProxyError> {
+    handle_route(st, headers, body, ShapeOps::responses()).await
+}
+
+// ── Shared handler ────────────────────────────────────────────────────────────
+
+async fn handle_route(
+    st: Arc<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+    ops: ShapeOps,
 ) -> Result<Response, ProxyError> {
     let started = Instant::now();
 
@@ -433,28 +507,22 @@ async fn chat_completions(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
-    // The task cluster comes from the control plane, which has already clustered
-    // this workload. A header keeps the datapath from having to classify inline —
-    // classification is judgment, and judgment does not belong on the hot path.
     let cluster = headers.get("x-onpar-cluster").and_then(|v| v.to_str().ok());
     let key = headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or(&model);
 
-    // Cloned out immediately: holding a routing lock across an upstream await
-    // would let one slow backend stall every phase change on the gateway.
     let decision = st.router.read().decide(cluster, key);
     let span = tracing::info_span!(
-        "chat_completions",
+        "proxy",
+        route = ops.upstream_path,
         backend = %decision.serve.name,
         model = %model,
         streaming
     );
     let _e = span.enter();
 
-    // Dispatch the mirror BEFORE awaiting the served backend, so shadow traffic is
-    // not serialised behind the client's response.
     if let Some(candidate) = decision.mirror.clone() {
         dispatch_mirror(
             Arc::clone(&st),
@@ -463,16 +531,24 @@ async fn chat_completions(
             headers.clone(),
             body.clone(),
             model.clone(),
+            ops.upstream_path,
         );
     }
 
     let mut served_by = decision.serve.name.clone();
     let mut failed_over = false;
-    let upstream = match send(&st, &decision.serve, &parsed, &headers, &body).await {
+    let upstream = match send(
+        &st,
+        &decision.serve,
+        ops.upstream_path,
+        &parsed,
+        &headers,
+        &body,
+    )
+    .await
+    {
         Ok(r) => r,
         Err(primary_err) => match &decision.fallback {
-            // Only a transport failure falls over. A 4xx is bad at both backends,
-            // and retrying it just bills the request twice.
             Some(alt) => {
                 tracing::warn!(
                     primary = %decision.serve.name,
@@ -482,7 +558,7 @@ async fn chat_completions(
                 );
                 failed_over = true;
                 served_by = alt.name.clone();
-                send(&st, alt, &parsed, &headers, &body).await?
+                send(&st, alt, ops.upstream_path, &parsed, &headers, &body).await?
             }
             None => return Err(primary_err),
         },
@@ -493,7 +569,6 @@ async fn chat_completions(
     if let Some(ct) = upstream.headers().get(header::CONTENT_TYPE) {
         out_headers.insert(header::CONTENT_TYPE, ct.clone());
     }
-    // Streaming responses must not be buffered by an intermediary.
     if streaming {
         out_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
         out_headers.insert("x-accel-buffering", HeaderValue::from_static("no"));
@@ -503,39 +578,28 @@ async fn chat_completions(
         HeaderValue::from_str(&served_by).unwrap_or_else(|_| HeaderValue::from_static("unknown")),
     );
 
-    // Everything capture needs, gathered before `base` takes ownership of `model`.
-    // `None` when capture is off, so a proxy that is not recording pays nothing
-    // for the machinery — not a clone, not an allocation.
-    let pending_capture = st.capturing().then(|| Capture {
-        request_id: headers
+    let pending_capture = st.capturing().then(|| {
+        let request_id = headers
             .get("x-request-id")
             .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned(),
-        model: model.clone(),
-        backend: served_by.clone(),
-        messages: parsed
-            .get("messages")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
-        response: String::new(),
-        prompt_tokens: None,
-        completion_tokens: None,
-        duration_ms: 0,
-        tools: parsed
-            .get("tools")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
-        tool_calls: Vec::new(),
-        // `{"type": "json_schema", ...}` and `{"type": "json_object"}` are the
-        // shapes in the wild; the type is what distinguishes the workload, and
-        // the schema itself belongs to the prompt, not to the format.
-        response_format: parsed
-            .get("response_format")
-            .and_then(|f| f.get("type").or(Some(f)))
-            .and_then(|t| t.as_str())
-            .map(ToOwned::to_owned),
-        redacted: crate::capture::Report::default(),
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(next_request_id);
+        let rf = (ops.extract_request)(&parsed);
+        Capture {
+            request_id,
+            model: model.clone(),
+            backend: served_by.clone(),
+            messages: rf.messages,
+            response: String::new(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            duration_ms: 0,
+            tools: rf.tools,
+            tool_calls: Vec::new(),
+            response_format: rf.response_format,
+            redacted: crate::capture::Report::default(),
+        }
     });
 
     let base = Record {
@@ -559,10 +623,10 @@ async fn chat_completions(
         meter.observe_body(&bytes);
         let metered = meter.finish();
         if let Some(mut c) = pending_capture {
-            c.response = store::body_text(&bytes);
-            c.tool_calls = store::body_tool_calls(&bytes);
+            c.response = (ops.body_text)(&bytes);
+            c.tool_calls = (ops.body_tool_calls)(&bytes);
             c.duration_ms = elapsed_ms(started);
-            (c.prompt_tokens, c.completion_tokens) = tokens(&metered);
+            (c.prompt_tokens, c.completion_tokens) = (ops.body_tokens)(&bytes);
             st.capture(c);
         }
         st.record(Record {
@@ -573,16 +637,9 @@ async fn chat_completions(
         return Ok((status, out_headers, bytes).into_response());
     }
 
-    // Streaming: tee each chunk to the client and to the meter in one pass.
     let st2 = Arc::clone(&st);
-    // Shared so the drop hook can read what the stream closure accumulated.
-    // Without this the record is written from the pre-metering snapshot and every
-    // streamed request reports no usage — caught by tests/streaming.rs.
     let meter = Arc::new(Mutex::new(Meter::new()));
     let meter_for_stream = Arc::clone(&meter);
-    // Only allocated when capture is on: reassembling the response costs memory
-    // proportional to its length, which a proxy that is not recording should not
-    // pay. `None` here means the deltas are observed for metering and discarded.
     let transcript = pending_capture
         .is_some()
         .then(|| Arc::new(Mutex::new(Transcript::default())));
@@ -599,21 +656,30 @@ async fn chat_completions(
                 if let Some(t) = &transcript_for_stream {
                     let mut t = t.lock();
                     for ev in &events {
-                        if let Some(s) = store::delta_text(ev) {
+                        if let Some(s) = (ops.delta_text)(ev) {
                             t.text.push_str(&s);
                         }
-                        // A name arrives once per call, in its opening
-                        // fragment; the argument fragments that follow carry
-                        // none and are deliberately not reassembled.
-                        if let Some(name) = store::delta_tool_call(ev) {
-                            t.calls.push(name);
+                        if let Some((index, name, args)) = (ops.delta_tool_call)(ev) {
+                            let entry = t.calls.entry(index).or_insert((None, String::new()));
+                            if entry.0.is_none() {
+                                entry.0 = name;
+                            }
+                            entry.1.push_str(&args);
+                        }
+                        // Accumulate tokens from APIs that embed them in stream events
+                        // (Messages: message_start + message_delta; Responses: response.completed).
+                        // For chat completions, stream_tokens always returns (None, None) and
+                        // the Meter handles token counting via the standard `usage` key.
+                        let (pt, ct) = (ops.stream_tokens)(ev);
+                        if let Some(p) = pt {
+                            t.prompt_tokens = Some(p);
+                        }
+                        if let Some(c) = ct {
+                            t.completion_tokens = Some(c);
                         }
                     }
                 }
             }
-            // The decoder enforces its own cap and logs what it discarded; the
-            // client's bytes are forwarded regardless, so an oversized frame
-            // costs metering accuracy and nothing else.
             Ok(bytes)
         }
         Err(e) => {
@@ -622,9 +688,6 @@ async fn chat_completions(
         }
     });
 
-    // The meter is moved into the stream closure, so the record is finalised by a
-    // completion hook rather than here. Simplest correct form: wrap the stream so
-    // the final chunk triggers the write.
     let counted = FinishOnDrop {
         state: st2,
         record: Mutex::new(Some(base)),
@@ -641,13 +704,6 @@ async fn chat_completions(
     Ok((status, out_headers, body).into_response())
 }
 
-/// Writes the request record when the response stream finishes or is dropped.
-///
-/// A client that disconnects mid-stream still produced cost upstream, so the
-/// record must be written on drop rather than only on clean completion. The same
-/// applies to the capture: a truncated answer is still evidence of what the
-/// backend produced, and silently discarding it would bias the eval set toward
-/// requests that happened to finish.
 struct FinishOnDrop {
     state: Arc<AppState>,
     record: Mutex<Option<Record>>,
@@ -657,17 +713,19 @@ struct FinishOnDrop {
     transcript: Option<Arc<Mutex<Transcript>>>,
 }
 
-/// What the stream closure accumulates for a capture, when capture is on.
-///
-/// One struct rather than two parallel `Option<Arc<..>>`: they are allocated
-/// together, locked together and read together, and two of them is two chances
-/// for one to be wired and the other forgotten.
+/// What the stream closure accumulates for a capture.
 #[derive(Default)]
 struct Transcript {
-    /// Assistant text, reassembled from the content deltas.
+    /// Assistant text, reassembled from content deltas.
     text: String,
-    /// Names of the tools called, in the order announced.
-    calls: Vec<String>,
+    /// Partial tool calls keyed by index (name, accumulated_arguments_json).
+    calls: std::collections::BTreeMap<usize, (Option<String>, String)>,
+    /// Prompt-token count extracted directly from the stream, when the API
+    /// embeds it there (Anthropic Messages, OpenAI Responses). `None` for
+    /// chat completions — the `Meter` handles that via the standard `usage` key.
+    prompt_tokens: Option<u64>,
+    /// Completion-token count extracted directly from the stream.
+    completion_tokens: Option<u64>,
 }
 
 impl Drop for FinishOnDrop {
@@ -682,20 +740,26 @@ impl Drop for FinishOnDrop {
             if let Some(t) = &self.transcript {
                 let t = t.lock();
                 c.response = t.text.clone();
-                c.tool_calls = t.calls.clone();
+                c.tool_calls = t
+                    .calls
+                    .values()
+                    .map(|(name, args)| ToolCall {
+                        name: name.clone().unwrap_or_default(),
+                        arguments: args.clone(),
+                    })
+                    .collect();
+                // Prefer tokens extracted directly from stream events (Messages /
+                // Responses APIs); fall back to the Meter for chat completions.
+                let meter_tokens = tokens(&metered);
+                c.prompt_tokens = t.prompt_tokens.or(meter_tokens.0);
+                c.completion_tokens = t.completion_tokens.or(meter_tokens.1);
             }
             c.duration_ms = elapsed_ms(self.started);
-            (c.prompt_tokens, c.completion_tokens) = tokens(&metered);
             self.state.capture(c);
         }
     }
 }
 
-/// Split reported usage into the two counts a capture records.
-///
-/// `None` when the upstream reported nothing — the same rule the meter follows.
-/// A zero here would read as "this request was free", which is the one direction
-/// a cost figure must never err in.
 fn tokens(m: &Metered) -> (Option<u64>, Option<u64>) {
     m.usage().map_or((None, None), |u| {
         (Some(u.prompt_tokens), Some(u.completion_tokens))
@@ -709,11 +773,11 @@ fn elapsed_ms(started: Instant) -> u64 {
 async fn send(
     st: &AppState,
     backend: &crate::router::Backend,
+    upstream_path: &str,
     parsed: &serde_json::Value,
     headers: &HeaderMap,
     body: &Bytes,
 ) -> Result<reqwest::Response, ProxyError> {
-    // Rewrite the model only when the backend names a different one.
     let payload = match &backend.model {
         Some(m) => {
             let mut v = parsed.clone();
@@ -728,14 +792,12 @@ async fn send(
     let mut req = st
         .client
         .post(format!(
-            "{}/chat/completions",
+            "{}/{upstream_path}",
             backend.base_url.trim_end_matches('/')
         ))
         .header(header::CONTENT_TYPE, "application/json")
         .body(payload);
 
-    // Forward authorisation untouched: credentials belong to the caller and this
-    // process never stores or inspects them.
     if let Some(auth) = headers.get(header::AUTHORIZATION) {
         req = req.header(header::AUTHORIZATION, auth.clone());
     }
@@ -744,4 +806,47 @@ async fn send(
         backend: backend.name.clone(),
         source: e,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use crate::capture::store::{ToolCall, delta_tool_call};
+    use crate::sse::Event;
+
+    #[test]
+    fn streaming_fragments_reassemble_two_calls_in_index_order() {
+        let payloads = [
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"search","arguments":""}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"name":"store","arguments":""}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"q\":"}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"hello\"}"}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"v\":1}"}}]}}]}"#,
+        ];
+        let mut t = Transcript::default();
+        for payload in &payloads {
+            let ev = Event::Data(payload.to_string());
+            if let Some((index, name, args)) = delta_tool_call(&ev) {
+                let entry = t.calls.entry(index).or_insert((None, String::new()));
+                if entry.0.is_none() {
+                    entry.0 = name;
+                }
+                entry.1.push_str(&args);
+            }
+        }
+        let calls: Vec<ToolCall> = t
+            .calls
+            .values()
+            .map(|(name, args)| ToolCall {
+                name: name.clone().unwrap_or_default(),
+                arguments: args.clone(),
+            })
+            .collect();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "search");
+        assert_eq!(calls[0].arguments, r#"{"q":"hello"}"#);
+        assert_eq!(calls[1].name, "store");
+        assert_eq!(calls[1].arguments, r#"{"v":1}"#);
+    }
 }

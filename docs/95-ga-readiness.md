@@ -126,11 +126,49 @@ runner (three consecutive releases, `runner=NEVER ASSIGNED`). An Intel-only
 regression would ship undetected. Recorded in the `build-compiled` matrix comment;
 acceptable for now, not acceptable silently.
 
-### 5. Human-agreement rate is claimed but not produced
+### 5. ~~Human-agreement rate is claimed but not produced~~ — CLOSED 2026-10-31
 
 Invariant 6 requires the judge model *and* the human-agreement rate in every
-report. The judge is disclosed. The agreement rate needs a human-labelling loop
-that does not exist, so that field can only print `?` today.
+report. The judge was disclosed; the rate was a number typed into a flag.
+
+Now produced: `onpar prove --judge-sample LEDGER` records every comparison the
+judge is shown, `onpar label LEDGER` has a human grade them blind in the same
+anonymous A/B order, and `prove --judge-labels LEDGER` measures the rate from
+the result. Judge length bias is measured and disclosed on the same footing as
+position bias ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+The rate still needs a human to sit down; what changed is that the number on
+the receipt is the output of that sitting rather than a claim about it.
+
+### 6. The eval replayed the prompt, not the step — CLOSED 2026-10-31
+
+Found while assessing agentic traffic: the collector sent the candidate a bare
+user message, with no system prompt, prior turns or tool schemas, so every
+system-prompted workload was scored on a different task and every tool-using
+cluster failed by construction. Eval items now carry the full redacted
+conversation and tools and are replayed teacher-forced, per step; tool-call
+arguments are captured (redacted) and validated against the offered schema;
+decision agreement is reported chance-corrected ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+
+### 7. Captures shared one request id
+
+The gateway took `request_id` from the client's `x-request-id` header and most
+clients send none, so a real log had every row with an empty id. The gateway
+now generates one when the header is absent, and nothing downstream keys on it.
+Closed 2026-10-31.
+
+### 8. ~~Anthropic Messages and OpenAI Responses capture~~ — CLOSED 2026-10-31
+
+The gateway proxied `/v1/chat/completions` only, while agent frameworks
+increasingly speak `/v1/messages` (Anthropic) or `/v1/responses` (OpenAI). Both
+routes are now proxied transparently, streamed or not, and captured as the same
+record — tool_use/tool_result blocks and Responses `function_call` items
+normalised to the chat shape the distiller and eval already read — so the proof
+is the same proof whichever API the agent framework used. Verified over real
+TCP in `onpar-gateway/tests/capture.rs`.
+
+### 9. Still open: a real run against live traffic
+
+Blocker 2 above remains the one that cannot be closed from inside the repo.
 
 ---
 

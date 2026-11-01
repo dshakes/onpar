@@ -36,14 +36,15 @@ and attempts. Absent means absent: a server that reports no usage produces
 ``None``, never a plausible-looking estimate, because an invented token count is
 indistinguishable from a measured one once it is in a report.
 
-## The limit worth knowing
+## Replay is the step, not the prompt
 
-Tool-using items cannot be reproduced faithfully. :class:`~.graders.EvalItem`
-records the tool calls the incumbent *made*, not the tool definitions it was
-*offered*, so there is nothing to send. Any reply's ``tool_calls`` are captured
-if the server volunteers them, but a cluster whose baseline called tools will
-grade against an empty call list and read as a regression it may not be. Collect
-those from your own harness, where the tool definitions live.
+An item carries the whole conversation the incumbent answered — system prompt,
+prior turns, tool results — and the tool schemas it was offered, and all of it
+goes back to the candidate (:func:`request_body`). That is teacher-forced
+replay: one step, given exactly the prefix the incumbent had. An eval set
+written before those fields existed replays the bare user text instead, and the
+:class:`Collection` says how many items took that path, because a task replayed
+without its system prompt is a different task (ADR-0020).
 
 ## The judge lives here too
 
@@ -79,10 +80,19 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from ..events import event
 from .graders import EvalItem
 from .judge import Comparison, JudgeFn, Reply
 
-__all__ = ["Collected", "Collection", "collect", "demo", "endpoint_judge"]
+__all__ = [
+    "Collected",
+    "Collection",
+    "collect",
+    "demo",
+    "endpoint_ask",
+    "endpoint_judge",
+    "request_body",
+]
 
 #: Which answer on an :class:`~.graders.EvalItem` a collection fills in.
 #: ``baseline`` is the incumbent's side — the bar being matched, not ground truth.
@@ -165,6 +175,9 @@ class Collection:
     replies: tuple[Collected, ...]
     items: tuple[EvalItem, ...]
     seconds: float
+    #: Items replayed without their captured conversation — user text alone,
+    #: no system prompt, no tools. Zero is the faithful case.
+    unfaithful: int = 0
 
     @property
     def asked(self) -> int:
@@ -195,8 +208,14 @@ class Collection:
         if (tok := self.completion_tokens) is not None:
             head += f" · {tok:,} completion tokens"
         out = [head]
+        if self.unfaithful:
+            out.append(
+                f"    {self.unfaithful} item(s) carry no captured messages and were replayed "
+                f"as bare user text — without the system prompt or tools the incumbent saw. "
+                f"Re-run `onpar distill` to record them."
+            )
         if not self.failures:
-            return out[0]
+            return "\n".join(out)
 
         out.append(
             f"    {len(self.failures)} item(s) never got a reply and are NOT scored — "
@@ -312,23 +331,22 @@ def _delay(attempt: int, backoff: float, after: float | None) -> float:
 
 def _ask(
     item_id: str,
-    prompt: str,
+    payload: bytes,
     *,
     url: str,
-    payload_of: Callable[[str], bytes],
     headers: dict[str, str],
     timeout: float,
     retries: int,
     backoff: float,
     sleep: Callable[[float], None],
 ) -> Collected:
-    """One prompt, retried where retrying can help. Never raises.
+    """One request, retried where retrying can help. Never raises.
 
-    Takes the id and the prompt rather than an :class:`~.graders.EvalItem` so the
-    judge can share it: a judge comparison is not an eval item, and duplicating
-    the retry ladder to say so would mean two places where a 429 is handled.
+    Takes the id and the serialised body rather than an :class:`~.graders.EvalItem`
+    so the judge can share it: a judge comparison is not an eval item, and
+    duplicating the retry ladder to say so would mean two places where a 429 is
+    handled.
     """
-    payload = payload_of(prompt)
     started = time.monotonic()
     last = ""
     for attempt in range(retries + 1):
@@ -434,8 +452,11 @@ class Progress:
 #: score one model's replies as another's. That is the failure a cache has to be
 #: built to make impossible, because it is invisible in the result.
 def _cache_key(*, base: str, model: str, side: str, item: EvalItem) -> str:
+    # The messages and tools are part of the question. An eval set regenerated
+    # with a different system prompt must not reuse replies to the old one.
+    context = json.dumps([list(item.messages), list(item.tools)], sort_keys=True, default=str)
     return hashlib.sha256(
-        json.dumps([base, model, side, item.item_id, item.prompt]).encode()
+        json.dumps([base, model, side, item.item_id, item.prompt, context]).encode()
     ).hexdigest()
 
 
@@ -473,6 +494,48 @@ def _load_resume(path: Path) -> dict[str, Collected]:
         if got.ok:
             out[key] = got
     return out
+
+
+def request_body(
+    item: EvalItem,
+    *,
+    model: str,
+    temperature: float = 0.0,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    """The chat-completions body that replays one eval item faithfully.
+
+    The whole captured conversation goes back — system prompt, prior turns, the
+    tool results the agent harness fed in — plus the tool schemas offered and the
+    response format demanded. That is **teacher-forced replay**: the candidate
+    is asked to produce one step given exactly the prefix the incumbent saw, and
+    graded on that step. It is the only replay a tool that does not execute your
+    tools can do honestly, and it is what per-turn agent benchmarks score.
+
+    An item with no ``messages`` (an eval set from before they were recorded, or
+    a hand-written one) falls back to the bare user text. The collector reports
+    how many items took that path, because a system-prompted workload replayed
+    without its system prompt is not the same task.
+    """
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": (
+            [dict(m) for m in item.messages]
+            if item.messages
+            else [{"role": "user", "content": item.prompt}]
+        ),
+        "temperature": temperature,
+        "stream": False,
+    }
+    if item.tools:
+        body["tools"] = [dict(t) for t in item.tools]
+    if isinstance(item.response_format, dict):
+        body["response_format"] = item.response_format
+    elif item.response_format in ("json_object", "json"):
+        body["response_format"] = {"type": "json_object"}
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    return body
 
 
 def collect(
@@ -538,18 +601,21 @@ def collect(
         raise ValueError(f"retries cannot be negative, got {retries}")
     url = chat_url(base)
 
-    def payload_of(prompt: str) -> bytes:
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "stream": False,
-        }
-        if max_tokens is not None:
-            body["max_tokens"] = max_tokens
-        return json.dumps(body).encode()
+    def payload_of(item: EvalItem) -> bytes:
+        return json.dumps(
+            request_body(item, model=model, temperature=temperature, max_tokens=max_tokens)
+        ).encode()
 
     request_headers = _headers(headers)
+    unfaithful = sum(1 for i in items if not i.messages)
+    if unfaithful:
+        event(
+            "collect.unfaithful",
+            items=unfaithful,
+            total=len(items),
+            why="no captured messages on the item; replaying the user text alone, "
+            "without the system prompt or tools the incumbent saw",
+        )
 
     started = time.monotonic()
 
@@ -600,6 +666,7 @@ def collect(
         replies=replies,
         items=tuple(_filled(i, c, side) for i, c in zip(items, replies, strict=True) if c.ok),
         seconds=time.monotonic() - started,
+        unfaithful=unfaithful,
     )
 
 
@@ -632,7 +699,7 @@ def _run(
     keys: list[str],
     ordered: list[Collected | None],
     url: str,
-    payload_of: Callable[[str], bytes],
+    payload_of: Callable[[EvalItem], bytes],
     request_headers: dict[str, str],
     timeout: float,
     retries: int,
@@ -652,9 +719,8 @@ def _run(
             pool.submit(
                 _ask,
                 item.item_id,
-                item.prompt,
+                payload_of(item),
                 url=url,
-                payload_of=payload_of,
                 headers=request_headers,
                 timeout=timeout,
                 retries=retries,
@@ -749,6 +815,53 @@ def _winner(text: str) -> str:
     return found.pop() if len(found) == 1 else ""
 
 
+def endpoint_ask(
+    *,
+    base: str,
+    model: str,
+    headers: dict[str, str] | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    retries: int = DEFAULT_RETRIES,
+    backoff: float = DEFAULT_BACKOFF,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Callable[[list[dict[str, Any]], list[dict[str, Any]]], tuple[str, tuple[dict[str, Any], ...]]]:
+    """A :data:`~.replay.Ask` over the same wire as :func:`collect`.
+
+    Session replay needs to send a conversation it built itself — the
+    candidate's own turns plus recorded tool results — so it cannot go through
+    an :class:`~.graders.EvalItem`. Same URL rule, same retry ladder, same single
+    file every byte leaves from. A failed round trip is an empty answer with no
+    calls, which the replay reads as a divergence rather than raising mid-session.
+    """
+    url = chat_url(base)
+    request_headers = _headers(headers)
+
+    def ask(
+        messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> tuple[str, tuple[dict[str, Any], ...]]:
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.0,
+            "stream": False,
+        }
+        if tools:
+            body["tools"] = tools
+        got = _ask(
+            "replay",
+            json.dumps(body).encode(),
+            url=url,
+            headers=request_headers,
+            timeout=timeout,
+            retries=retries,
+            backoff=backoff,
+            sleep=sleep,
+        )
+        return (got.text, got.tool_calls) if got.ok else ("", ())
+
+    return ask
+
+
 def endpoint_judge(
     *,
     base: str,
@@ -798,9 +911,8 @@ def endpoint_judge(
     def ask(c: Comparison) -> Reply:
         got = _ask(
             "judge",
-            JUDGE_PROMPT.format(prompt=c.prompt, a=c.a, b=c.b),
+            payload_of(JUDGE_PROMPT.format(prompt=c.prompt, a=c.a, b=c.b)),
             url=url,
-            payload_of=payload_of,
             headers=request_headers,
             timeout=timeout,
             retries=retries,

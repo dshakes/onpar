@@ -83,6 +83,49 @@ class EvalItem:
     #: `{"type": "json_object"}` — the CLI reads this straight out of an eval-set
     #: file, so whatever a user wrote arrives here unvalidated.
     response_format: str | dict | None = None
+    #: The whole conversation the incumbent answered — system prompt, prior
+    #: turns, tool results — redacted at capture. This is what gets replayed to
+    #: the candidate. Empty for eval sets written before it existed; those
+    #: replay ``prompt`` alone, which is unfaithful for any system-prompted or
+    #: tool-using workload and the collector says so.
+    messages: tuple[dict[str, Any], ...] = ()
+    #: Tool schemas the request offered, as sent. Replayed with the messages,
+    #: and the standard ``ToolArgsSchema`` validates candidate arguments against
+    #: them.
+    tools: tuple[dict[str, Any], ...] = ()
+    #: Agent session this step belongs to and its position in it, from
+    #: :mod:`onpar.distill.trajectory`. Empty / 0 for a lone request.
+    session: str = ""
+    step: int = 0
+
+    @property
+    def agentic(self) -> bool:
+        """Whether this step is part of a tool-using workload at all."""
+        return bool(self.tools) or bool(self.baseline_tool_calls)
+
+    @classmethod
+    def from_row(cls, r: dict[str, Any], n: int = 0) -> EvalItem:
+        """One row of an eval-set file, as `onpar distill` writes it or a hand edits it.
+
+        One reader for every surface. The CLI and the MCP server each had their
+        own copy, which is how a field added to the file reached one and not the
+        other — and a loader that drops `messages` silently reverts the replay
+        to the unfaithful one.
+        """
+        return cls(
+            item_id=str(r.get("item_id", n)),
+            cluster=str(r.get("cluster", "all")),
+            prompt=str(r.get("prompt", "")),
+            baseline=str(r.get("baseline", "")),
+            candidate=str(r.get("candidate", "")),
+            baseline_tool_calls=tuple(r.get("baseline_tool_calls", ()) or ()),
+            candidate_tool_calls=tuple(r.get("candidate_tool_calls", ()) or ()),
+            response_format=r.get("response_format"),
+            messages=tuple(m for m in (r.get("messages") or ()) if isinstance(m, dict)),
+            tools=tuple(t for t in (r.get("tools") or ()) if isinstance(t, dict)),
+            session=str(r.get("session") or ""),
+            step=int(r.get("step") or 0),
+        )
 
 
 @runtime_checkable
@@ -257,6 +300,172 @@ def _args(call: object) -> dict[str, Any]:
         parsed = _parse_json(raw)
         return parsed if isinstance(parsed, dict) else {}
     return raw if isinstance(raw, dict) else {}
+
+
+def _parameter_schemas(tools: tuple[dict[str, Any], ...]) -> dict[str, dict[str, Any]]:
+    """Tool name -> its ``parameters`` JSON schema, for both spellings in the wild."""
+    out: dict[str, dict[str, Any]] = {}
+    for t in tools:
+        fn = t.get("function") if isinstance(t.get("function"), dict) else t
+        name = fn.get("name")
+        params = fn.get("parameters") or fn.get("input_schema")
+        if name and isinstance(params, dict):
+            out[str(name)] = params
+    return out
+
+
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "number": (int, float),
+    "integer": (int,),
+    "boolean": (bool,),
+    "object": (dict,),
+    "array": (list,),
+    "null": (type(None),),
+}
+
+
+def schema_problems(value: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
+    """Where ``value`` violates ``schema``, as readable paths. Empty means valid.
+
+    The subset of JSON Schema that tool definitions actually use: ``type``,
+    ``required``, ``properties``, ``additionalProperties: false``, ``enum``,
+    ``items``. Anything else is accepted, not refused — a validator that
+    rejected a schema keyword it did not know would fail every call that used
+    it, which reads exactly like a model that cannot call tools.
+
+    ponytail: no $ref, no allOf/anyOf, no formats. Add when a captured schema
+    uses one; today the whole corpus is flat argument objects.
+    """
+    problems: list[str] = []
+    want = schema.get("type")
+    if want:
+        names = want if isinstance(want, list) else [want]
+        allowed = tuple(t for n in names for t in _JSON_TYPES.get(str(n), ()))
+        # bool is an int to Python; JSON Schema disagrees.
+        ok = isinstance(value, allowed) and not (isinstance(value, bool) and bool not in allowed)
+        if allowed and not ok:
+            got = "null" if value is None else type(value).__name__
+            problems.append(f"{path}: expected {'/'.join(map(str, names))}, got {got}")
+            return problems  # the checks below assume the right type
+    if "enum" in schema and isinstance(schema["enum"], list) and value not in schema["enum"]:
+        problems.append(f"{path}: {value!r} not one of {schema['enum']}")
+    if isinstance(value, dict):
+        props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        for key in schema.get("required") or ():
+            if isinstance(key, str) and key not in value:
+                problems.append(f"{path}.{key}: required")
+        for key, sub in value.items():
+            if key in props and isinstance(props[key], dict):
+                problems += schema_problems(sub, props[key], f"{path}.{key}")
+            elif schema.get("additionalProperties") is False:
+                problems.append(f"{path}.{key}: not in schema")
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for i, sub in enumerate(value):
+            problems += schema_problems(sub, schema["items"], f"{path}[{i}]")
+    return problems
+
+
+@dataclass(frozen=True, slots=True)
+class ToolArgsSchema:
+    """Every argument object the candidate emits must satisfy the tool's schema.
+
+    The commonest way an open model fails an agentic workload is not choosing
+    the wrong tool — it is calling the right tool with arguments the tool will
+    reject: a string where an integer was declared, a required field missing,
+    a value outside the enum. The incumbent's harness would have thrown; this
+    grader throws first, deterministically, against the schema the request
+    itself offered.
+
+    Not applicable when the candidate called nothing (``ToolChoice`` owns that)
+    or when no schema for the called tools was captured.
+    """
+
+    name: str = "tool-args-schema"
+    tier: Tier = Tier.ASSERT
+
+    def grade(self, item: EvalItem) -> Score:
+        if not item.candidate_tool_calls:
+            return Score(self.name, self.tier, Outcome.NOT_APPLICABLE, "candidate called no tools")
+        schemas = _parameter_schemas(item.tools)
+        if not schemas:
+            return Score(self.name, self.tier, Outcome.NOT_APPLICABLE, "no tool schemas on item")
+        problems: list[str] = []
+        checked = 0
+        for i, call in enumerate(item.candidate_tool_calls):
+            names = _call_names((call,))
+            if not names or names[0] not in schemas:
+                # A tool the request never offered. ToolChoice misses this when
+                # the baseline called nothing, and a hallucinated tool is the
+                # one argument error no harness can recover from — so it is a
+                # problem on this item, not a call to skip.
+                problems.append(f"call {i} ({names[0] if names else '?'}): tool never offered")
+                continue
+            checked += 1
+            # A call whose arguments are not even JSON is the worst case and
+            # `_args` hides it as `{}` — surface it instead.
+            raw = (
+                call.get("arguments") or (call.get("function") or {}).get("arguments")
+                if isinstance(call, dict)
+                else None
+            )
+            if isinstance(raw, str) and _parse_json(raw) is _NOT_JSON:
+                problems.append(f"call {i} ({names[0]}): arguments are not JSON")
+                continue
+            problems += [
+                f"call {i} ({names[0]}) {p}"
+                for p in schema_problems(_args(call), schemas[names[0]])
+            ]
+        if problems:
+            return Score(self.name, self.tier, Outcome.FAIL, "; ".join(problems)[:400])
+        return Score(self.name, self.tier, Outcome.PASS)
+
+
+#: Markers a serving stack leaves in `content` when the model emitted a tool
+#: call and the server's parser did not recognise it. Each is a chat-template
+#: dialect in the wild; the list is a calibration knob, extended when a new one
+#: is seen, never a guess.
+TOOL_LEAK_MARKERS: tuple[str, ...] = (
+    "<tool_call>",
+    "<function_call>",
+    "<|tool_call|>",
+    "<|tool_calls_section_begin|>",
+    "<function=",
+    "[TOOL_CALLS]",
+    '"tool_calls":',
+    "<｜tool▁calls▁begin｜>",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolLeak:
+    """A tool call that arrived as text is a failed call, not an answer.
+
+    When the serving engine's `--tool-call-parser` or chat template does not
+    match the model, the model still emits the call — and the server returns it
+    as `content` with `finish_reason: stop`, no `tool_calls`. Graded as prose it
+    reads as a verbose answer; graded by ToolChoice it reads as "chose not to
+    call", which is a different failure with a different fix. This is the
+    commonest reason an open model *looks* worse at tool use than it is, and
+    the fix is a server flag, so the detail says so.
+    """
+
+    name: str = "tool-leak"
+    tier: Tier = Tier.ASSERT
+
+    def grade(self, item: EvalItem) -> Score:
+        if not item.tools or item.candidate_tool_calls:
+            return Score(self.name, self.tier, Outcome.NOT_APPLICABLE, "no leak possible")
+        hit = next((m for m in TOOL_LEAK_MARKERS if m in item.candidate), None)
+        if hit is None:
+            return Score(self.name, self.tier, Outcome.PASS)
+        return Score(
+            self.name,
+            self.tier,
+            Outcome.FAIL,
+            f"tool call leaked into text ({hit!r}) — the server did not parse it; "
+            f"check the engine's tool-call parser / chat template for this model",
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -438,6 +647,8 @@ DEFAULT_GRADERS: tuple[Grader, ...] = (
     JsonShape(),
     ToolChoice(),
     ToolArgs(),
+    ToolArgsSchema(),
+    ToolLeak(),
     ExactMatch(),
     NumericAgreement(),
     DiffFiles(),

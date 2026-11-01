@@ -172,6 +172,11 @@ class Requirements:
     #: one copy of the weights, N adapters — and the one most often left unused
     #: because the flags differ per engine.
     lora: LoraFleet | None = None
+    #: Whether the workload issues tool calls. Without the right engine-side
+    #: parser the model's output comes back as plain text (finish_reason: stop),
+    #: which the eval suite flags as tool-leak. Parser selection is family-
+    #: specific; the adapter maps the model repo to the verified flag name.
+    tool_calling: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -627,6 +632,29 @@ def _structured(req: Requirements, engine: Engine) -> Knob | None:
     )
 
 
+def _tool_calling(req: Requirements, model: ModelSpec | None) -> Knob | None:
+    """Enable tool-call parsing when the workload issues tools.
+
+    Without the right parser the model's output comes back as plain text with
+    finish_reason: stop — the eval suite flags this as tool-leak. Parser
+    selection is family-specific; the adapter maps the repo to the verified
+    flag name. Models without a repo fall through to Unsupported there, which
+    surfaces the gap rather than silently serving without the parser.
+    """
+    if not req.tool_calling or model is None:
+        return None
+    # Prefer the repo as the lookup key — it encodes the exact model family.
+    # Fall back to the catalogue id only when no repo is set.
+    repo = getattr(model, "repo", "") or model.id
+    return Knob(
+        Setting.TOOL_CALLING,
+        repo,
+        "tool-using workload: the parser must match the model's output format "
+        "or calls come back as text (finish_reason: stop). Family-specific — "
+        "the adapter maps the repo to the verified parser name.",
+    )
+
+
 def _budget_warnings(req: Requirements, fit: Fit | None) -> tuple[str, ...]:
     """Requirements the hardware cannot meet, stated rather than configured around.
 
@@ -773,6 +801,8 @@ def plan(
         knobs.append(tp)
     if (sd := _structured(req, engine)) is not None:
         knobs.append(sd)
+    if (tc := _tool_calling(req, model)) is not None:
+        knobs.append(tc)
     if (lora := _lora(req)) is not None:
         knobs.append(lora)
     if model is not None and quant:

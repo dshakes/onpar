@@ -146,6 +146,8 @@ class DistillReport:
     uncovered: tuple[str, ...]
     floor_applied: int
     labels: tuple[tuple[str, int, float], ...]
+    #: Agent sessions recovered from the log, when any request was a loop step.
+    sessions: Any = None
 
     def render(self) -> str:
         lines = [
@@ -153,6 +155,8 @@ class DistillReport:
             f"  →  {self.items} eval items",
             "",
         ]
+        if self.sessions is not None and (agentic := self.sessions.render()):
+            lines += [*agentic, ""]
         for label, n, share in self.labels:
             lines.append(f"  {label:<40}{n:>4} sampled{share * 100:7.1f}% of traffic")
         if self.uncovered:
@@ -181,10 +185,17 @@ def distill(
     is not ground truth — it is what a candidate has to match, a weaker and more
     honest claim, and the provenance block says so in the file itself.
     """
+    from .distill import trajectory
     from .distill.cluster import cluster, sample
     from .distill.shape import from_capture_row
 
     caps = [from_capture_row(r) for r in rows]
+    # Before clustering: a step's session is a fact about the log, not about
+    # the sample, and the report counts loops over the whole corpus.
+    # Keyed by object, not request id: real logs have every row sharing an
+    # empty id, because most clients send no x-request-id.
+    linked = dict(zip(map(id, caps), trajectory.link(caps), strict=True))
+    sessions = trajectory.report(caps)
     clusters = cluster(caps)
     if name_with is not None:
         # Between clustering and sampling, so the names reach the report. Never
@@ -226,9 +237,20 @@ def distill(
                     # grader four frames down — the next seam along from the
                     # one this pipeline was built to close.
                     "baseline_tool_calls": [
-                        {"name": t.get("name", "")} for t in cap.tool_calls if isinstance(t, dict)
+                        {k: v for k, v in t.items() if k in ("name", "arguments")}
+                        for t in cap.tool_calls
+                        if isinstance(t, dict)
                     ],
                     "response_format": cap.response_format,
+                    # The context the candidate is replayed against. Redacted at
+                    # capture, like `prompt` and `baseline`; the system prompt is
+                    # in here in clear, which `prompt` alone never carried. The
+                    # alternative was replaying every system-prompted task
+                    # without its system prompt, which is a different task.
+                    "messages": list(cap.messages),
+                    "tools": list(cap.tools),
+                    "session": linked[id(cap)][0],
+                    "step": linked[id(cap)][1],
                 }
             )
 
@@ -244,10 +266,16 @@ def distill(
             "min_per_cluster": min_per_cluster,
             "floor_applied": report.floor_applied,
             "uncovered": list(report.uncovered),
+            "agent_sessions": sessions.multi_step,
+            "agentic_share": round(sessions.agentic_share, 4),
             "note": (
                 "Baselines are the incumbent's replies, not ground truth. "
                 "Clusters listed in `uncovered` contributed no items, and the "
-                "verdict says nothing about that traffic."
+                "verdict says nothing about that traffic. Each item carries the "
+                "full redacted conversation it was answered in (`messages`) and "
+                "the tools offered, so a candidate is replayed on the same step "
+                "the incumbent took; `session`/`step` say which agent loop it "
+                "belongs to."
             ),
         },
     }
@@ -258,6 +286,7 @@ def distill(
         uncovered=tuple(names.get(u, u) for u in report.uncovered),
         floor_applied=report.floor_applied,
         labels=tuple(labels),
+        sessions=sessions,
     )
 
 

@@ -90,6 +90,52 @@ VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 QUANT_METHODS = {"fp8": "fp8"}
 
 
+#: Tool-call parser name for vLLM, keyed on substrings of HuggingFace repo names.
+#: First match wins; more-specific entries appear before any that are substrings
+#: of them (e.g. Qwen3-Coder before plain Qwen/, DeepSeek-V3.1 before V3).
+#: Verified: docs.vllm.ai/en/stable/features/tool_calling.html (2026-10-31).
+#:
+#: Families NOT in this table (Gemma 3, Phi-4, MiniMax, GLM-5 etc.) return
+#: Unsupported — the table is the citation, not a best-effort list.
+_VLLM_TOOL_PARSERS: tuple[tuple[str, str], ...] = (
+    # Qwen3-Coder uses an XML envelope — before plain Qwen/ which matches first.
+    ("Qwen/Qwen3-Coder", "qwen3_xml"),
+    # Qwen2.5 and Qwen3 Instruct: tokenizer_config.json embeds Hermes-style tool
+    # use; the hermes parser parses it. Verified in the vLLM tool_calling docs.
+    ("Qwen/", "hermes"),
+    ("meta-llama/", "llama3_json"),
+    ("mistralai/", "mistral"),
+    # V3.1 must precede V3 — "DeepSeek-V3" is a substring of "DeepSeek-V3.1".
+    ("deepseek-ai/DeepSeek-V3.1", "deepseek_v31"),
+    ("deepseek-ai/DeepSeek-V3", "deepseek_v3"),
+    ("THUDM/glm-4.5", "glm45"),
+    ("THUDM/glm-4.7", "glm47"),
+    ("moonshotai/Kimi-K2", "kimi_k2"),
+)
+
+#: Tool-call parser name for SGLang, same key convention as above.
+#: Verified: sgl-project/sglang function_call_parser.py ToolCallParserEnum (2026-10-31).
+_SGLANG_TOOL_PARSERS: tuple[tuple[str, str], ...] = (
+    ("Qwen/Qwen3-Coder", "qwen3_coder"),
+    ("Qwen/", "qwen25"),
+    ("meta-llama/", "llama3"),
+    ("mistralai/", "mistral"),
+    ("deepseek-ai/DeepSeek-V3.1", "deepseekv31"),
+    ("deepseek-ai/DeepSeek-V3", "deepseekv3"),
+    ("THUDM/glm-4.5", "glm45"),
+    ("THUDM/glm-4.7", "glm47"),
+    ("moonshotai/Kimi-K2", "kimi_k2"),
+)
+
+
+def _tool_parser(repo: str, table: tuple[tuple[str, str], ...]) -> str | None:
+    """First matching parser name, or None if the family is not in the table."""
+    for key, parser in table:
+        if key in repo:
+            return parser
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class LoraFleet:
     """Adapters to serve over one set of base weights.
@@ -170,6 +216,23 @@ SOURCES = {
     # only source that cannot drift from the binary you are about to run — and the
     # reason every Unsupported below names a flag that genuinely is not in it.
     "mlx": "mlx_lm.server --help, mlx-lm 0.31.3 (checked 2026-07-28)",
+    # Tool-calling flags: the feature doc rather than engine_args, because parser
+    # names appear per-model-family there and nowhere else. `--tool-strict-level`
+    # is documented here with its three levels (none/function/parameter).
+    "vllm_tool_calling": (
+        "https://docs.vllm.ai/en/stable/features/tool_calling.html (checked 2026-10-31)"
+    ),
+    # SGLang's ToolCallParserEnum in function_call_parser.py is the only canonical
+    # source — the user-facing docs page is JS-rendered without a stable URL.
+    "sglang_tool_calling": (
+        "https://github.com/sgl-project/sglang/blob/main/python/sglang"
+        "/srt/function_call/function_call_parser.py (checked 2026-10-31)"
+    ),
+    # llama.cpp: `--jinja` flag, confirmed in tools/server/README.md.
+    "llamacpp_tool_calling": (
+        "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md"
+        " (checked 2026-10-31)"
+    ),
 }
 
 
@@ -189,6 +252,11 @@ class Setting(StrEnum):
     #: Serve N fine-tuned adapters over one set of base weights. The value is a
     #: `LoraFleet`; anything else is a programming error rather than a setting.
     LORA_FLEET = "lora_fleet"
+    #: Enable tool-call parsing for the named model repo. The value is the
+    #: HuggingFace repo string (or catalogue model id as fallback); the adapter
+    #: maps it to the engine-specific parser flag. Without the right parser, tool
+    #: calls return as plain text (finish_reason: stop) — a silent failure.
+    TOOL_CALLING = "tool_calling"
 
 
 @dataclass(frozen=True, slots=True)
@@ -371,6 +439,31 @@ class VllmAdapter(Adapter):
                     ("--structured-outputs-config", f'{{"backend": "{value}"}}'),
                     "nested config; the old --guided-decoding-backend no longer exists",
                 )
+            case Setting.TOOL_CALLING:
+                if not value:
+                    return Translated((), "tool calling is not requested")
+                parser = _tool_parser(str(value), _VLLM_TOOL_PARSERS)
+                if parser is None:
+                    return Unsupported(
+                        setting,
+                        f"no verified tool-call parser for {value!r}; "
+                        f"see {SOURCES['vllm_tool_calling']}",
+                    )
+                # --enable-auto-tool-choice lets the model decide when to call tools.
+                # --tool-call-parser names the output-format parser for this family.
+                # --tool-strict-level function constrains the tool-call envelope on
+                # every request that carries tools, preventing the call from leaking
+                # back as plain text (finish_reason: stop).
+                # Verified: docs.vllm.ai/en/stable/features/tool_calling.html (2026-10-31).
+                return Translated(
+                    (
+                        "--enable-auto-tool-choice",
+                        "--tool-call-parser",
+                        parser,
+                        "--tool-strict-level",
+                        "function",
+                    )
+                )
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -489,6 +582,19 @@ class SglangAdapter(Adapter):
                     f"{value!r} is a valid backend value, but the flag that "
                     "carries it is unconfirmed",
                 )
+            case Setting.TOOL_CALLING:
+                if not value:
+                    return Translated((), "tool calling is not requested")
+                parser = _tool_parser(str(value), _SGLANG_TOOL_PARSERS)
+                if parser is None:
+                    return Unsupported(
+                        setting,
+                        f"no verified tool-call parser for {value!r}; "
+                        f"see {SOURCES['sglang_tool_calling']}",
+                    )
+                # SGLang takes a single flag; auto-enable is on by default.
+                # Verified: sgl-project/sglang server_args.py (2026-10-31).
+                return Translated(("--tool-call-parser", parser))
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -628,6 +734,12 @@ class MlxAdapter(Adapter):
                     # the path and infers nothing from the name.
                     return Translated(("--adapter-path", value.adapters[0][1]))
                 return Unsupported(setting, "no adapters given")
+            case Setting.TOOL_CALLING:
+                return Unsupported(
+                    setting,
+                    "no verified tool-calling flag in mlx_lm.server --help; "
+                    "tool calls are returned as structured text output",
+                )
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -822,6 +934,17 @@ class LlamaCppAdapter(Adapter):
                         )
                     return Translated(("--lora", value.adapters[0][1]))
                 return Unsupported(setting, "no adapters given")
+            case Setting.TOOL_CALLING:
+                if not value:
+                    return Translated((), "tool calling is not requested")
+                # --jinja enables tool calling via Jinja chat templates in llama-server.
+                # A specific --chat-template-file may be needed for the model's format.
+                # Verified: tools/server/README.md (2026-10-31).
+                return Translated(
+                    ("--jinja",),
+                    "tool calling via Jinja template; --chat-template-file may be "
+                    "needed for the model's specific tool format",
+                )
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -977,6 +1100,12 @@ class OllamaAdapter(Adapter):
                     setting,
                     "adapters are baked in with a Modelfile ahead of time, not selected "
                     "at serve time",
+                )
+            case Setting.TOOL_CALLING:
+                return Unsupported(
+                    setting,
+                    "Ollama handles tool calling at the API layer; the model must be "
+                    "pulled with a tool-compatible chat template baked into the Modelfile",
                 )
         return Unsupported(setting, f"no mapping defined for {setting}")
 
@@ -1189,6 +1318,83 @@ def demo() -> None:
     # No adapter is better than the wrong adapter.
     assert adapter_for("vllm") is not None
     assert adapter_for("llama.cpp") is not None
+
+    # Tool-calling: each known family maps to the cited parser; unknown falls back
+    # to Unsupported so the caller learns what is missing rather than silently
+    # running without the parser — which would make calls return as text.
+    qwen_repo = "Qwen/Qwen3-32B"
+    llama_repo = "meta-llama/Llama-3.1-8B-Instruct"
+    mistral_repo = "mistralai/Mistral-Small-24B-Instruct-2501"
+    deepseek_repo = "deepseek-ai/DeepSeek-V3"
+
+    # vLLM: correct parser per family, plus the two mandatory flags.
+    vllm_qwen = v.translate(Setting.TOOL_CALLING, qwen_repo)
+    assert isinstance(vllm_qwen, Translated), vllm_qwen
+    assert "--enable-auto-tool-choice" in vllm_qwen.argv
+    assert "--tool-call-parser" in vllm_qwen.argv
+    assert vllm_qwen.argv[vllm_qwen.argv.index("--tool-call-parser") + 1] == "hermes"
+    assert "--tool-strict-level" in vllm_qwen.argv
+
+    assert (
+        v.translate(Setting.TOOL_CALLING, llama_repo).argv[
+            list(v.translate(Setting.TOOL_CALLING, llama_repo).argv).index("--tool-call-parser") + 1
+        ]
+        == "llama3_json"
+    )
+    assert (
+        v.translate(Setting.TOOL_CALLING, mistral_repo).argv[
+            list(v.translate(Setting.TOOL_CALLING, mistral_repo).argv).index("--tool-call-parser")
+            + 1
+        ]
+        == "mistral"
+    )
+    assert (
+        v.translate(Setting.TOOL_CALLING, deepseek_repo).argv[
+            list(v.translate(Setting.TOOL_CALLING, deepseek_repo).argv).index("--tool-call-parser")
+            + 1
+        ]
+        == "deepseek_v3"
+    )
+
+    # Unknown repo returns Unsupported with a reason — not a guess.
+    gap = v.translate(Setting.TOOL_CALLING, "google/gemma-3-27b-it")
+    assert isinstance(gap, Unsupported), gap
+    assert "no verified tool-call parser" in gap.reason
+
+    # SGLang: its own parser names.
+    sgl_qwen = s.translate(Setting.TOOL_CALLING, qwen_repo)
+    assert isinstance(sgl_qwen, Translated), sgl_qwen
+    assert sgl_qwen.argv == ("--tool-call-parser", "qwen25")
+    assert s.translate(Setting.TOOL_CALLING, llama_repo).argv == ("--tool-call-parser", "llama3")
+    assert isinstance(s.translate(Setting.TOOL_CALLING, "google/gemma-3-27b-it"), Unsupported)
+
+    # llama.cpp: --jinja enables tool calling via Jinja templates.
+    lcpp = adapter_for("llama.cpp")
+    assert lcpp is not None
+    jinja_out = lcpp.translate(Setting.TOOL_CALLING, llama_repo)
+    assert isinstance(jinja_out, Translated), jinja_out
+    assert "--jinja" in jinja_out.argv
+
+    # mlx and Ollama: no verified serve flag — Unsupported with a reason.
+    for engine_name in ("mlx", "ollama"):
+        a = adapter_for(engine_name)
+        assert a is not None
+        gap = a.translate(Setting.TOOL_CALLING, llama_repo)
+        assert isinstance(gap, Unsupported), f"{engine_name} unexpectedly translated tool_calling"
+        assert gap.reason  # reason must name why, not just say "unsupported"
+
+    # Qwen3-Coder uses a different parser than plain Qwen3.
+    coder_repo = "Qwen/Qwen3-Coder-480B-A35B-Instruct"
+    assert (
+        v.translate(Setting.TOOL_CALLING, coder_repo).argv[
+            list(v.translate(Setting.TOOL_CALLING, coder_repo).argv).index("--tool-call-parser") + 1
+        ]
+        == "qwen3_xml"
+    )
+    assert s.translate(Setting.TOOL_CALLING, coder_repo).argv == (
+        "--tool-call-parser",
+        "qwen3_coder",
+    )
 
     print("engines: ok")
 

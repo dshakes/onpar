@@ -9,6 +9,7 @@ import os
 import pathlib
 import sys
 from collections.abc import Callable
+from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from . import catalog, engine, fit, hardware
@@ -20,6 +21,21 @@ if TYPE_CHECKING:  # imported lazily at the call sites — `onpar fit` must stay
     from .prove.judge import Agreement, JudgeFn
 
 GB = 1024**3
+
+
+def _size_arg(s: str) -> str:
+    """argparse `type=` for context flags: validate, keep the string.
+
+    A bad value used to surface from inside the command as exit 1 — "the world
+    did not cooperate" — when it is the invocation that is wrong. Raising here
+    makes argparse say so with exit 2, and the commands keep parsing the string
+    themselves exactly as before.
+    """
+    try:
+        _parse_size(s)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+    return s
 
 
 def _parse_size(s: str) -> int:
@@ -403,6 +419,10 @@ def cmd_build(args: argparse.Namespace) -> int:
         v = getattr(args, name, None)
         if v is not None:
             fields[name] = _parse_size(v) if name == "context" else v
+    # Only when stated. A store_true flag is False by default, and False here
+    # would read as "the user said this workload never calls tools".
+    if getattr(args, "tool_calling", False):
+        fields["tool_calling"] = True
 
     turn = s.turn(
         description=" ".join(args.description) if args.description else "",
@@ -630,6 +650,31 @@ def cmd_cache(args: argparse.Namespace) -> int:
     if remembered:
         cache.save_state(cache.State(pinned=state.pinned, budget_bytes=budget))
     u = cache.usage(root, budget_bytes=budget, pinned=state.pinned)
+    if getattr(args, "json", False):
+        pins = {p.casefold() for p in u.pinned}
+        print(
+            json.dumps(
+                {
+                    "root": str(u.root),
+                    "total_bytes": u.total_bytes,
+                    "free_bytes": u.free_bytes,
+                    "budget_bytes": u.budget_bytes,
+                    "over_by": u.over_by,
+                    "entries": [
+                        {
+                            "repo": e.repo,
+                            "kind": e.kind,
+                            "bytes": e.bytes,
+                            "age_days": round(e.age_days, 1),
+                            "pinned": e.repo.casefold() in pins,
+                        }
+                        for e in u.entries
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
     print(u.render())
     if remembered:
         print(f"  budget remembered: {cache.human(budget or 0)} — evict defaults to it now\n")
@@ -661,6 +706,10 @@ def cmd_box(args: argparse.Namespace) -> int:
         receipt=receipt,
         ref=args.ref,
     )
+
+    if getattr(args, "json", False) and not args.write:
+        print(json.dumps(asdict(b), indent=2, default=str))
+        return 0
 
     print()
     print(b.render())
@@ -833,30 +882,77 @@ def _namer_from(args: argparse.Namespace) -> Callable[[str], str]:
 
 def cmd_distill(args: argparse.Namespace) -> int:
     """Turn a capture log into the eval set `onpar prove` reads."""
-    from . import core, observe
+    from . import observe
 
-    if not core.available():
-        print(f"\n  {core.why_unavailable()}\n")
-        return 1
+    import_files: list[str] = getattr(args, "import_files", None) or []
+    unredacted: bool = getattr(args, "unredacted", False)
+    rows: list[dict] = []
+    skip_summary: dict[str, int] = {}
 
-    home = observe.state_dir()
-    log = pathlib.Path(args.capture) if args.capture else home / "captures.log"
-    key_path = pathlib.Path(args.key) if args.key else home / "capture.key"
-    if not log.exists():
-        print(f"\n  No capture log at {log}. Run `onpar observe` first.\n")
-        return 1
-    if not key_path.exists():
-        # Never `load_or_create_key` here: a fresh key would decrypt nothing and
-        # report an empty log, which reads as "no traffic" rather than "wrong
-        # key" — the most misleading answer available.
-        print(f"\n  No key at {key_path}. It is written when the gateway first records.\n")
-        return 1
+    # ── imported traces ───────────────────────────────────────────────────────
+    if import_files:
+        from . import core as _core
+        from .distill.importers import load as _import_load
 
-    rows = core.read_captures(str(log), key_path.read_bytes())
+        if not unredacted and not _core.available():
+            print(
+                f"\n  Importing traces requires redaction: {_core.why_unavailable()}\n"
+                "  Pass --unredacted to skip (eval set will contain unredacted text).\n",
+                file=sys.stderr,
+            )
+            return 1
+
+        for imp_path in import_files:
+            imp_rows, imp_skips = _import_load(imp_path, unredacted=unredacted)
+            rows.extend(imp_rows)
+            for reason, n in imp_skips.items():
+                skip_summary[reason] = skip_summary.get(reason, 0) + n
+
+    # ── capture log ───────────────────────────────────────────────────────────
+    # Read when explicitly requested via --capture, or when no --import given.
+    capture_explicit = bool(getattr(args, "capture", None))
+    read_log = capture_explicit or not import_files
+
+    if read_log:
+        from . import core
+
+        if not core.available():
+            print(f"\n  {core.why_unavailable()}\n")
+            return 1
+
+        home = observe.state_dir()
+        log = pathlib.Path(args.capture) if args.capture else home / "captures.log"
+        key_path = pathlib.Path(args.key) if args.key else home / "capture.key"
+
+        if not log.exists():
+            if not import_files:
+                print(f"\n  No capture log at {log}. Run `onpar observe` first.\n")
+                return 1
+            # --import is the only source; a missing default log is fine
+        elif not key_path.exists():
+            # Never `load_or_create_key` here: a fresh key would decrypt nothing
+            # and report an empty log, which reads as "no traffic" rather than
+            # "wrong key" — the most misleading answer available.
+            print(f"\n  No key at {key_path}. It is written when the gateway first records.\n")
+            return 1
+        else:
+            cap_rows = core.read_captures(str(log), key_path.read_bytes())
+            if not cap_rows and not import_files:
+                print(f"\n  {log} holds no captures yet.\n")
+                return 1
+            rows.extend(cap_rows)
+
     if not rows:
-        print(f"\n  {log} holds no captures yet.\n")
+        print("\n  No rows to distill. Run `onpar observe` first, or pass --import.\n")
         return 1
 
+    # ── skip summary ──────────────────────────────────────────────────────────
+    if skip_summary:
+        print("\n  skipped during import:")
+        for reason in sorted(skip_summary):
+            print(f"    {skip_summary[reason]:>4}  {reason}")
+
+    # ── distill + write ───────────────────────────────────────────────────────
     # A namer only when an endpoint is given. Naming sends captured prompts to a
     # model, which is the one thing in this pipeline that leaves the machine —
     # so it is opt-in per run, never a default, and never inferred from some
@@ -904,6 +1000,9 @@ def cmd_migrate(args: argparse.Namespace) -> int:
             print(f"\n  No migration in progress ({path} does not exist).\n")
             return 1
         st = migrate.load_state(path)
+        if getattr(args, "json", False):
+            print(json.dumps(asdict(st) | {"stage": asdict(st.stage())}, indent=2, default=str))
+            return 0
         print(f"\n  migration to {st.candidate}, started {st.started}")
         print(f"  currently {st.stage().render()}  ·  {len(st.runs)} runs recorded\n")
         for r in st.runs[-5:]:
@@ -942,18 +1041,10 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     def prove_it(doc: dict) -> object:
         from .prove import EvalItem, suite
 
-        items = [
-            EvalItem(
-                item_id=str(r["item_id"]),
-                cluster=str(r["cluster"]),
-                prompt=str(r["prompt"]),
-                baseline=str(r["baseline"]),
-                candidate=str(r.get("candidate") or ""),
-                baseline_tool_calls=tuple(r.get("baseline_tool_calls") or ()),
-                response_format=r.get("response_format"),
-            )
-            for r in doc["items"]
-        ]
+        # The one reader every surface shares. A third hand-written copy lived
+        # here and never learned about `messages`/`tools`, so `onpar migrate`
+        # replayed the bare prompt while `onpar prove` replayed the step.
+        items = [EvalItem.from_row(r, i) for i, r in enumerate(doc["items"])]
         _refuse_ungraded(items, endpoint=args.candidate_endpoint, source="the distilled eval set")
         items, _ = _collect_replies(items, args)
         if not items:
@@ -1091,6 +1182,25 @@ def cmd_measure(args: argparse.Namespace) -> int:
 def cmd_catalog_sources(args: argparse.Namespace) -> int:
     """Where the catalogue's models came from."""
     models = catalog.load()
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {
+                    "sources": [
+                        {
+                            "path": str(p),
+                            "built_in": p == catalog.CATALOG_PATH,
+                            "exists": p.exists(),
+                        }
+                        for p in catalog.sources()
+                    ],
+                    "models": len(models),
+                    "drop_in_dir": str(_drop_in_dir()),
+                },
+                indent=2,
+            )
+        )
+        return 0
     print()
     for p in catalog.sources():
         mark = "built-in" if p == catalog.CATALOG_PATH else "drop-in "
@@ -1104,6 +1214,18 @@ def cmd_catalog_sources(args: argparse.Namespace) -> int:
 def cmd_catalog(args: argparse.Namespace) -> int:
     """Verify catalogue entries against each model's published config."""
     from . import catalog_update as cu
+
+    if getattr(args, "model_id", None):
+        m = catalog.get(args.model_id)  # KeyError -> one sentence naming `onpar models`
+        if getattr(args, "json", False):
+            print(json.dumps(asdict(m), indent=2, default=str))
+            return 0
+        print()
+        for k, v in asdict(m).items():
+            print(f"  {k:<14}{v}")
+        print(f"\n  onpar fit --explain {m.id}      # does it fit here, and the arithmetic")
+        print(f"  onpar where {m.id}             # which hardware runs it\n")
+        return 0
 
     specs = [m for m in catalog.load() if m.repo]
     skipped = [m for m in catalog.load() if not m.repo]
@@ -1133,7 +1255,9 @@ def cmd_catalog(args: argparse.Namespace) -> int:
         if any(p.significant for p in report.changed):
             print("  Memory figures changed — re-run `onpar fit` before deploying.")
     print()
-    return 0
+    # Every entry unreachable is the world not cooperating, and a green exit
+    # over it is the shape of failure this repo keeps finding.
+    return 1 if proposals and len(report.failed) == len(proposals) else 0
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
@@ -1146,6 +1270,9 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
     known = {m.repo for m in catalog.load() if m.repo}
     found = cu.discover(known, cu.http_fetch, limit=args.limit)
+    if getattr(args, "json", False):
+        print(json.dumps([asdict(d) for d in found], indent=2))
+        return 0
     if not found:
         print("\n  Nothing new, or the index was unreachable.\n")
         return 0
@@ -1299,6 +1426,7 @@ def cmd_advise(args: argparse.Namespace) -> int:
         itl_ms=args.itl_ms,
         prefix_sharing=args.prefix_sharing,
         structured_output=args.structured_output,
+        tool_calling=args.tool_calling,
     )
     p = plan(hw, req)
 
@@ -1317,8 +1445,11 @@ def cmd_advise(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "engine": p.engine.value,
-                    "suggestions": [s.__dict__ | {"impact": s.impact.value} for s in ideas],
-                    "drift": [s.__dict__ | {"impact": s.impact.value} for s in drift],
+                    # `asdict`, not `__dict__`: Suggestion is a slots dataclass
+                    # and has no `__dict__`, so the only machine-readable path
+                    # for this command was a traceback.
+                    "suggestions": [asdict(s) | {"impact": s.impact.value} for s in ideas],
+                    "drift": [asdict(s) | {"impact": s.impact.value} for s in drift],
                 },
                 default=str,
                 indent=2,
@@ -1518,6 +1649,23 @@ def _judge_from(args: argparse.Namespace) -> tuple[JudgeFn | None, str, Agreemen
         model=model,
         timeout=args.collect_timeout,
     )
+    sample = getattr(args, "judge_sample", None)
+    labels = getattr(args, "judge_labels", None)
+    if sample:
+        # Every comparison the judge sees, appended as it happens, so a human
+        # can label the same anonymous A/B afterwards (`onpar label`).
+        from .prove.label import recording
+
+        judge = recording(judge, pathlib.Path(sample))
+    if labels:
+        if args.judge_samples:
+            raise ValueError(
+                "--judge-labels and --judge-samples are two sources for one number; "
+                "give the ledger alone and the rate is measured from it"
+            )
+        from .prove.label import agreement_from
+
+        return judge, model, agreement_from(pathlib.Path(labels), model)
     return judge, model, Agreement(agreed=args.judge_agreed, total=args.judge_samples, model=model)
 
 
@@ -1559,19 +1707,7 @@ def cmd_prove(args: argparse.Namespace) -> int:
     if not rows:
         raise ValueError(f"{args.evalset} contains no eval items")
 
-    items = [
-        EvalItem(
-            item_id=str(r.get("item_id", i)),
-            cluster=str(r.get("cluster", "all")),
-            prompt=str(r.get("prompt", "")),
-            baseline=str(r.get("baseline", "")),
-            candidate=str(r.get("candidate", "")),
-            baseline_tool_calls=tuple(r.get("baseline_tool_calls", ()) or ()),
-            candidate_tool_calls=tuple(r.get("candidate_tool_calls", ()) or ()),
-            response_format=r.get("response_format"),
-        )
-        for i, r in enumerate(rows)
-    ]
+    items = [EvalItem.from_row(r, i) for i, r in enumerate(rows)]
 
     # Built before anything is collected: a misspelled judge endpoint should cost
     # nothing, not several hundred round trips followed by a usage error.
@@ -1660,19 +1796,85 @@ def cmd_prove(args: argparse.Namespace) -> int:
                 file=out,
             )
 
+    replayed = None
+    if getattr(args, "replay_sessions", False):
+        if not args.candidate_endpoint:
+            raise ValueError("--replay-sessions needs --candidate-endpoint to ask the candidate")
+        from .prove.collect import endpoint_ask
+        from .prove.replay import replay_all
+
+        replayed = replay_all(
+            items,
+            endpoint_ask(
+                base=args.candidate_endpoint,
+                model=args.candidate_model or args.candidate,
+                timeout=args.collect_timeout,
+            ),
+        )
+
     if args.json:
         print(result.receipt.to_json())
+        if replayed is not None and replayed.sessions:
+            print(replayed.render(), file=sys.stderr)
         return 0
 
     print()
     print(result.render())
     print()
+    if replayed is not None and (block := replayed.render()):
+        print(block)
+        print()
     if args.out:
         pathlib.Path(args.out).write_text(result.receipt.to_json())
         print(f"  receipt written to {args.out}\n")
 
     # Nonzero when nothing can move, so this is usable as a CI gate.
     return 0 if result.policy.moved_share > 0 else 1
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Every install and state check at once, ending with the next command.
+
+    Exit 1 when something a stage needs is broken (a log with no key), 0 when
+    the only gaps are optional — a machine with nothing but `onpar fit` is a
+    healthy machine that has not started yet.
+    """
+    from .doctor import run
+
+    report = run()
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print()
+        print(report.render())
+        print()
+    return 1 if report.blocking else 0
+
+
+def cmd_label(args: argparse.Namespace) -> int:
+    """A human grades the comparisons a judge was shown, blind to its answers.
+
+    This is how the human-agreement rate on a receipt becomes a measurement
+    rather than a typed claim. Interactive by nature; in a pipe it labels
+    nothing and says so, rather than reading answers off stdin as if a person
+    had typed them.
+    """
+    from .prove.label import label, load
+
+    ledger = pathlib.Path(args.ledger)
+    if not ledger.exists():
+        raise ValueError(
+            f"{ledger} does not exist — run `onpar prove --judge-sample {ledger}` first"
+        )
+    if not load(ledger):
+        raise ValueError(f"{ledger} holds no judged comparisons")
+    if not sys.stdin.isatty():
+        print("  `onpar label` needs a terminal: a human has to read each pair.", file=sys.stderr)
+        return 2
+    print()
+    label(ledger, limit=args.limit)
+    print()
+    return 0
 
 
 def cmd_brief(args: argparse.Namespace) -> int:
@@ -1944,6 +2146,27 @@ def _converse(parser: argparse.ArgumentParser) -> int:
         return leave(130)
 
 
+#: The seven stages in the order they are run, for `--help`. Twenty-seven
+#: verbs in a flat list told a new user nothing about where to start; the
+#: first-run audit's second-worst finding.
+LOOP_HELP = """\
+the loop, in order — start with `onpar fit`, it needs nothing:
+
+  ③ fit       what runs here, with the arithmetic        onpar fit
+  ①② observe  the capture proxy, in your request path    onpar observe --upstream URL
+     distill  captured traffic -> per-task eval set      onpar distill
+  ④ prove     on par? per task, with confidence        onpar prove evalset.json --candidate-endpoint
+  ⑤ run       serve it, native config, nothing to edit   onpar run MODEL
+  ⑥ migrate   shadow -> canary -> cut, gated on proof    onpar migrate
+  ⑦ guard     does the receipt still hold                onpar guard receipt.json
+
+  doctor      what is installed, what to run next        onpar doctor
+  label       grade the judge's comparisons, blind       onpar label judged.jsonl
+
+Or describe what you are building: `onpar` with no verb asks only what it needs to.
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
     from . import __version__
     from .events import configure
@@ -1956,6 +2179,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="onpar",
         description="Run open models properly on your own hardware — and prove they hold.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=LOOP_HELP,
     )
     # Both spellings. `--version` is the convention; `onpar version` is what
     # people actually type, and answering it with an argparse error over a list
@@ -1978,22 +2203,35 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("upgrade", help="how to upgrade this install").set_defaults(fn=cmd_upgrade)
 
     f = sub.add_parser("fit", help="what runs on this machine")
-    f.add_argument("--context", default="32k", help="context length, e.g. 8k, 32k, 128000")
+    f.add_argument(
+        "--context", type=_size_arg, default="32k", help="context length, e.g. 8k, 32k, 128000"
+    )
     f.add_argument("--concurrency", type=int, default=1, help="simultaneous requests")
     f.add_argument("--explain", metavar="MODEL_ID", help="show the arithmetic for one model")
-    f.add_argument("--json", action="store_true")
+    f.add_argument("--json", action="store_true", help="machine-readable output")
     f.add_argument("--quiet", action="store_true", help="hide the NOT FEASIBLE section")
     f.set_defaults(fn=cmd_fit)
 
     w = sub.add_parser("where", help="which hardware can run a given model")
     w.add_argument("model", help="catalogue model id, e.g. glm-5.2")
-    w.add_argument("--context", default="32k", help="context length, e.g. 8k, 32k")
+    w.add_argument("--context", type=_size_arg, default="32k", help="context length, e.g. 8k, 32k")
     w.add_argument("--concurrency", type=int, default=1, help="simultaneous requests")
-    w.add_argument("--json", action="store_true")
+    w.add_argument("--json", action="store_true", help="machine-readable output")
     w.add_argument("--quiet", action="store_true", help="hide the WILL NOT RUN section")
     w.set_defaults(fn=cmd_where)
 
-    c = sub.add_parser("catalog", help="verify catalogue entries against published configs")
+    c = sub.add_parser(
+        "catalog", help="look up one entry, or verify entries against published configs"
+    )
+    c.add_argument(
+        "model_id",
+        nargs="?",
+        help=(
+            "show this catalogue entry "
+            "(the README trains you to expect this; it used to be a usage error)"
+        ),
+    )
+    c.add_argument("--json", action="store_true", help="machine-readable output")
     c.add_argument("--model", help="check one entry instead of all")
     c.add_argument("--network", action="store_true", help="allow network access (required)")
     c.add_argument("--apply", action="store_true", help="write the proposed changes")
@@ -2029,25 +2267,32 @@ def main(argv: list[str] | None = None) -> int:
     ca.set_defaults(fn=cmd_catalog_add)
 
     cs = sub.add_parser("catalog-sources", help="where the catalogue's models come from")
+    cs.add_argument("--json", action="store_true", help="machine-readable")
     cs.set_defaults(fn=cmd_catalog_sources)
 
     b = sub.add_parser("build", help="say what you're building; get a deployment and a proof plan")
     b.add_argument("description", nargs="*", help='e.g. "coding assistant for 20 engineers"')
     b.add_argument("--on", help="hardware profile id; omit to detect this machine")
     b.add_argument("--concurrency", type=int)
-    b.add_argument("--context")
+    b.add_argument("--context", type=_size_arg)
     b.add_argument("--ttft-ms", type=int, dest="ttft_ms")
     b.add_argument("--itl-ms", type=int, dest="itl_ms")
     b.add_argument("--prefix-sharing", type=float, dest="prefix_sharing")
+    b.add_argument(
+        "--tool-calling",
+        action="store_true",
+        dest="tool_calling",
+        help="the workload calls tools; emit the engine's tool-call parser for this model family",
+    )
     b.add_argument("--save", help="write the session state here")
     b.add_argument("--resume", help="continue a saved session")
-    b.add_argument("--json", action="store_true")
+    b.add_argument("--json", action="store_true", help="machine-readable output")
     b.set_defaults(fn=cmd_build)
 
     r = sub.add_parser("run", help="serve a model here: resolve weights, launch, wait for healthy")
     r.add_argument("model", help="catalogue model id, e.g. qwen3-30b-a3b")
     r.add_argument("--quant", help="force a quantisation; default is the best that fits")
-    r.add_argument("--context", default="32k", help="context length, e.g. 8k, 32k")
+    r.add_argument("--context", type=_size_arg, default="32k", help="context length, e.g. 8k, 32k")
     r.add_argument(
         "--concurrency",
         type=int,
@@ -2076,7 +2321,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ho = sub.add_parser("host", help="where to run a model this machine cannot; free tiers first")
     ho.add_argument("model", help="catalogue model id, e.g. deepseek-v3")
-    ho.add_argument("--context", default="32k", help="context length, e.g. 8k, 32k")
+    ho.add_argument("--context", type=_size_arg, default="32k", help="context length, e.g. 8k, 32k")
     ho.add_argument("--concurrency", type=int, default=4, help="simultaneous requests")
     ho.add_argument(
         "--quant", help="force a quantisation; default is the best that fits each shape"
@@ -2089,7 +2334,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ho.add_argument("--provider", help="pick this provider instead of the cheapest that fits")
     ho.add_argument("--write", metavar="DIR", help="emit the deploy artifact here")
-    ho.add_argument("--json", action="store_true")
+    ho.add_argument("--json", action="store_true", help="machine-readable output")
     ho.set_defaults(fn=cmd_host)
 
     cc = sub.add_parser("cache", help="what the engines downloaded, and what to evict")
@@ -2102,12 +2347,15 @@ def main(argv: list[str] | None = None) -> int:
     cc.add_argument("repo", nargs="?", help="repo to pin or unpin, e.g. org/Model-4bit")
     cc.add_argument("--budget", help="cache budget, e.g. 200G; remembered once set")
     cc.add_argument("--yes", action="store_true", help="actually delete (evict prints otherwise)")
+    cc.add_argument("--json", action="store_true", help="machine-readable")
     cc.set_defaults(fn=cmd_cache)
 
     bx = sub.add_parser("box", help="build the OCI box: one artifact, every platform")
     bx.add_argument("model", help="catalogue model id, e.g. qwen3-30b-a3b")
     bx.add_argument("--write", metavar="DIR", help="emit the box here")
-    bx.add_argument("--context", default="32k", help="context length to tune for, e.g. 8k, 32k")
+    bx.add_argument(
+        "--context", type=_size_arg, default="32k", help="context length to tune for, e.g. 8k, 32k"
+    )
     bx.add_argument(
         "--concurrency",
         type=int,
@@ -2117,6 +2365,7 @@ def main(argv: list[str] | None = None) -> int:
     bx.add_argument("--quant", help="force a quantisation; default is the best that fits each host")
     bx.add_argument("--receipt", help="attach this proof; without it the box claims nothing")
     bx.add_argument("--ref", help="registry reference the printed push commands use")
+    bx.add_argument("--json", action="store_true", help="the plan as JSON; nothing is written")
     bx.set_defaults(fn=cmd_box)
 
     w = sub.add_parser("watch", help="discover new models on a schedule; stages, never publishes")
@@ -2126,12 +2375,13 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--limit", type=int, default=40, help="how many index entries to consider")
     w.add_argument("--max-add", type=int, default=5, dest="max_add", help="cap per run")
     w.add_argument("--network", action="store_true", help="allow network access (required)")
-    w.add_argument("--json", action="store_true")
+    w.add_argument("--json", action="store_true", help="machine-readable output")
     w.set_defaults(fn=cmd_watch)
 
     d = sub.add_parser("discover", help="trending models not yet in the catalogue")
     d.add_argument("--network", action="store_true", help="allow network access (required)")
     d.add_argument("--limit", type=int, default=40)
+    d.add_argument("--json", action="store_true", help="machine-readable")
     d.set_defaults(fn=cmd_discover)
 
     u = sub.add_parser("ui", help="launch the local workbench")
@@ -2172,11 +2422,41 @@ def main(argv: list[str] | None = None) -> int:
     )
     di.add_argument("--capture", help="the log to read (default: ~/.onpar/captures.log)")
     di.add_argument("--key", help="the capture key (default: ~/.onpar/capture.key)")
+    di.add_argument(
+        "--import",
+        dest="import_files",
+        action="append",
+        metavar="FILE",
+        help=(
+            "trace export to import as capture rows (repeatable; JSONL or JSON). "
+            "Supported formats: Langfuse generations export, OpenAI-compatible "
+            'request/response pairs ({"request":{...},"response":{...}}). '
+            "May be combined with --capture. "
+            "Text is redacted before storage (requires onpar-core; see --unredacted)."
+        ),
+    )
+    di.add_argument(
+        "--unredacted",
+        action="store_true",
+        help=(
+            "skip redaction of imported traces. "
+            "The eval set will contain unredacted text and must not leave this machine."
+        ),
+    )
     di.add_argument("--out", default="evalset.json")
     di.add_argument("--budget", type=int, default=200, help="total eval items to sample")
     di.add_argument("--min-per-cluster", type=int, default=3, dest="min_per_cluster")
-    di.add_argument("--json", action="store_true")
+    di.add_argument("--json", action="store_true", help="machine-readable output")
     di.set_defaults(fn=cmd_distill)
+
+    dr = sub.add_parser("doctor", help="what is installed, what each stage needs, what to run next")
+    dr.add_argument("--json", action="store_true", help="machine-readable")
+    dr.set_defaults(fn=cmd_doctor)
+
+    lb = sub.add_parser("label", help="grade judged comparisons blind, to measure the judge")
+    lb.add_argument("ledger", help="the JSONL written by `onpar prove --judge-sample`")
+    lb.add_argument("--limit", type=int, help="stop after this many labels")
+    lb.set_defaults(fn=cmd_label)
 
     mg = sub.add_parser("migrate", help="walk the loop: distill, prove, and what the gate permits")
     mg.add_argument("--candidate", help="the model being evaluated")
@@ -2196,6 +2476,7 @@ def main(argv: list[str] | None = None) -> int:
     mg.add_argument("--step", action="store_true", help="run one pass (the default)")
     mg.add_argument("--install", action="store_true", help="print a crontab fragment")
     mg.add_argument("--every-hours", type=int, default=24, dest="every_hours")
+    mg.add_argument("--json", action="store_true", help="machine-readable")
     mg.set_defaults(fn=cmd_migrate)
 
     ms = sub.add_parser("measure", help="measure real decode throughput, or refuse to")
@@ -2209,7 +2490,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     ms.add_argument("--samples", type=int, default=M_DEFAULT_SAMPLES)
     ms.add_argument("--max-tokens", type=int, default=M_DEFAULT_MAX_TOKENS, dest="max_tokens")
-    ms.add_argument("--context", default="32k", help="context for the roofline comparison")
+    ms.add_argument(
+        "--context", type=_size_arg, default="32k", help="context for the roofline comparison"
+    )
     ms.add_argument(
         "--warmup",
         type=int,
@@ -2226,7 +2509,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ms.add_argument("--concurrency", type=int, default=1)
     ms.add_argument("--out", help="write the measurement as JSON")
-    ms.add_argument("--json", action="store_true")
+    ms.add_argument("--json", action="store_true", help="machine-readable output")
     ms.set_defaults(fn=cmd_measure)
 
     g = sub.add_parser("guard", help="check whether a receipt still holds")
@@ -2249,11 +2532,11 @@ def main(argv: list[str] | None = None) -> int:
             "that should not deploy on an unreviewed proof."
         ),
     )
-    g.add_argument("--json", action="store_true")
+    g.add_argument("--json", action="store_true", help="machine-readable output")
     g.set_defaults(fn=cmd_guard)
 
     ad = sub.add_parser("advise", help="what to change, and where production diverged")
-    ad.add_argument("--context", default="32k")
+    ad.add_argument("--context", type=_size_arg, default="32k")
     ad.add_argument("--concurrency", type=int, default=1)
     ad.add_argument(
         "--workload", default="interactive", choices=["interactive", "realtime", "batch"]
@@ -2262,13 +2545,14 @@ def main(argv: list[str] | None = None) -> int:
     ad.add_argument("--itl-ms", type=int, dest="itl_ms")
     ad.add_argument("--prefix-sharing", type=float, default=0.0, dest="prefix_sharing")
     ad.add_argument("--structured-output", action="store_true", dest="structured_output")
+    ad.add_argument("--tool-calling", action="store_true", dest="tool_calling")
     # Observed reality — any subset. Telemetry arrives in pieces.
     ad.add_argument("--seen-concurrency", type=int, dest="seen_concurrency")
     ad.add_argument("--seen-prefix-sharing", type=float, dest="seen_prefix_sharing")
     ad.add_argument("--seen-ttft-ms", type=int, dest="seen_ttft_ms")
-    ad.add_argument("--seen-peak-context", dest="seen_peak_context")
+    ad.add_argument("--seen-peak-context", type=_size_arg, dest="seen_peak_context")
     ad.add_argument("--seen-kv-utilisation", type=float, dest="seen_kv_utilisation")
-    ad.add_argument("--json", action="store_true")
+    ad.add_argument("--json", action="store_true", help="machine-readable output")
     ad.set_defaults(fn=cmd_advise)
 
     pv = sub.add_parser("prove", help="run the eval suite and print the verdict")
@@ -2337,6 +2621,28 @@ def main(argv: list[str] | None = None) -> int:
         help="how many comparisons a human checked. Zero means the judge is "
         "UNMEASURED, which the report says out loud and the gate refuses to "
         "advance on",
+    )
+    pv.add_argument(
+        "--judge-sample",
+        dest="judge_sample",
+        metavar="LEDGER",
+        help="append every comparison the judge is shown, and its answer, to this "
+        "JSONL ledger — then `onpar label LEDGER` to grade them blind",
+    )
+    pv.add_argument(
+        "--judge-labels",
+        dest="judge_labels",
+        metavar="LEDGER",
+        help="a ledger `onpar label` has worked through; the human-agreement rate "
+        "is measured from it instead of typed with --judge-agreed/--judge-samples",
+    )
+    pv.add_argument(
+        "--replay-sessions",
+        dest="replay_sessions",
+        action="store_true",
+        help="also replay each multi-step agent session end to end against "
+        "--candidate-endpoint, answering tool calls from the recording; a miss "
+        "stops the session (never a live tool call)",
     )
     _add_collection_flags(pv)
     pv.add_argument(
@@ -2430,7 +2736,11 @@ def main(argv: list[str] | None = None) -> int:
         # Convention: a bad path, an altered receipt or an unparseable date is a
         # nonzero exit with a sentence, never a traceback. `json.JSONDecodeError`
         # is a `ValueError`, so malformed input is covered here too.
-        print(f"error: {e}", file=sys.stderr)
+        #
+        # `KeyError.__str__` is the repr of its argument, so an unknown model
+        # printed as `error: 'unknown model: nope'` — quotes and all.
+        msg = e.args[0] if isinstance(e, KeyError) and e.args else e
+        print(f"error: {msg}", file=sys.stderr)
         # The one moment a user needs to know diagnostics exist. There is no
         # env-var section in the docs to find it in, and pointing at it from a
         # failure costs a line and lands exactly when it is useful. Suppressed

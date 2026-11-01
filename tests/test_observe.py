@@ -280,9 +280,12 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         text = " ".join(m.get("content") or "" for m in body.get("messages", []))
-        if "refund" in text:
+        if any(m.get("role") == "tool" for m in body.get("messages", [])):
+            msg = {"role":"assistant","content":"Refunded. Receipt sent to ada@example.com."}
+        elif "refund" in text:
             msg = {"role":"assistant","content":None,"tool_calls":[
-                {"id":"c1","type":"function","function":{"name":"refund","arguments":"{}"}}]}
+                {"id":"c1","type":"function","function":{"name":"refund",
+                 "arguments":"{\\"order_id\\": 1, \\"email\\": \\"ada@example.com\\"}"}}]}
         else:
             msg = {"role":"assistant","content":"Summary. Contact ada@example.com."}
         out = json.dumps({"choices":[{"message":msg}],
@@ -364,8 +367,10 @@ def test_the_whole_chain_runs_on_one_machine(tmp_path):
 
         import urllib.request
 
-        def ask(content: str, tools: bool) -> None:
-            body: dict = {"model": "gpt-5", "messages": [{"role": "user", "content": content}]}
+        SYSTEM = {"role": "system", "content": "You are the refunds desk."}
+
+        def ask(messages: list[dict], tools: bool) -> dict:
+            body: dict = {"model": "gpt-5", "messages": messages}
             if tools:
                 body["tools"] = [{"type": "function", "function": {"name": "refund"}}]
                 body["response_format"] = {"type": "json_object"}
@@ -374,20 +379,33 @@ def test_the_whole_chain_runs_on_one_machine(tmp_path):
                 data=json.dumps(body).encode(),
                 headers={"content-type": "application/json"},
             )
-            urllib.request.urlopen(req, timeout=10).read()
+            return json.loads(urllib.request.urlopen(req, timeout=10).read())
 
         for i in range(6):
-            ask(f"summarise document {i} for ada@example.com", tools=False)
+            ask([{"role": "user", "content": f"summarise document {i} for ada@example.com"}], False)
+        # Two agent loops of two steps each: the model calls refund(), the
+        # harness runs it and sends the whole conversation back for the reply.
         for i in range(2):
-            ask(f"refund order {i}", tools=True)
+            step1 = [SYSTEM, {"role": "user", "content": f"refund order {i}"}]
+            reply = ask(step1, True)["choices"][0]["message"]
+            step2 = [*step1, reply, {"role": "tool", "tool_call_id": "c1", "content": "ok"}]
+            ask(step2, True)
 
         for _ in range(100):
-            if log.exists() and len(core.read_captures(str(log), key.read_bytes())) >= 8:
+            if log.exists() and len(core.read_captures(str(log), key.read_bytes())) >= 10:
                 break
             time.sleep(0.1)
 
         rows = core.read_captures(str(log), key.read_bytes())
-        assert len(rows) >= 8, f"only {len(rows)} captures landed"
+        assert len(rows) == 10, f"{len(rows)} captures landed, expected 10"
+
+        # The arguments are recorded — and redacted on the way to disk, like
+        # every other field. ADR-0020.
+        called = [r for r in rows if r["tool_calls"]]
+        assert len(called) == 2
+        args = called[0]["tool_calls"][0]
+        assert args["name"] == "refund"
+        assert "order_id" in args["arguments"] and "ada@example.com" not in args["arguments"]
 
         # NFR-3, checked at the far end of the pipeline rather than at the
         # write path that guarantees it. Both matter: the guarantee is
@@ -397,9 +415,21 @@ def test_the_whole_chain_runs_on_one_machine(tmp_path):
         assert b"summarise document" not in raw
 
         doc, report = observe.distill(rows, budget=50, min_per_cluster=2)
-        assert report.clusters == 2, f"tool and text traffic must not merge: {report.labels}"
+        assert report.clusters == 3, f"text, tool-call and post-tool steps: {report.labels}"
         assert "ada@example.com" not in json.dumps(doc), "redaction must survive to the eval set"
-        assert any(i["baseline_tool_calls"] for i in doc["items"])
+        tool_items = [i for i in doc["items"] if i["baseline_tool_calls"]]
+        assert tool_items and "order_id" in tool_items[0]["baseline_tool_calls"][0]["arguments"]
+
+        # Each step carries the conversation it was answered in, and the two
+        # steps of one loop are linked into one session at depths 1 and 2.
+        assert all(i["messages"] for i in doc["items"]), "replay needs the captured messages"
+        assert tool_items[0]["tools"][0]["function"]["name"] == "refund"
+        assert report.sessions.multi_step == 2 and report.sessions.longest == 2
+        steps = {(i["session"], i["step"]) for i in doc["items"] if i["step"] == 2}
+        assert len(steps) == 2 and all(
+            any(j["session"] == s and j["step"] == 1 for j in doc["items"]) for s, _ in steps
+        )
+        assert "agent sessions" in report.render()
 
         out = observe.write_eval_set(doc, tmp_path / "evalset.json")
         reread = json.loads(out.read_text())

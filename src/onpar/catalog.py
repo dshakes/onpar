@@ -302,7 +302,7 @@ def get(model_id: str) -> ModelSpec:
     for m in load():
         if m.id == model_id:
             return m
-    raise KeyError(f"unknown model: {model_id}")
+    raise KeyError(f"unknown model: {model_id} — `onpar models` lists every catalogue id")
 
 
 def demo() -> None:
