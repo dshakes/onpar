@@ -148,6 +148,8 @@ class DistillReport:
     labels: tuple[tuple[str, int, float], ...]
     #: Agent sessions recovered from the log, when any request was a loop step.
     sessions: Any = None
+    #: Captures dropped because they were upstream errors, not answers.
+    errors: int = 0
 
     def render(self) -> str:
         lines = [
@@ -155,6 +157,12 @@ class DistillReport:
             f"  →  {self.items} eval items",
             "",
         ]
+        if self.errors:
+            lines += [
+                f"  {self.errors} capture(s) were upstream errors (empty reply, no usage) and "
+                f"are not in the eval set — an error is not the incumbent's answer",
+                "",
+            ]
         if self.sessions is not None and (agentic := self.sessions.render()):
             lines += [*agentic, ""]
         for label, n, share in self.labels:
@@ -190,6 +198,21 @@ def distill(
     from .distill.shape import from_capture_row
 
     caps = [from_capture_row(r) for r in rows]
+    # A row with no answer, no tool call and no token usage is an upstream
+    # error a gateway older than 1.4 recorded as evidence. It is not the
+    # incumbent's answer, and a cluster whose baseline is "" grades a candidate
+    # against nothing. Dropped and counted, never silently; the gateway itself
+    # no longer writes them.
+    errors = sum(1 for c in caps if not c.response and not c.tool_calls and c.prompt_tokens is None)
+    caps = [c for c in caps if c.response or c.tool_calls or c.prompt_tokens is not None]
+    if errors and not caps:
+        # Only when the errors are what emptied it. An empty log keeps its own
+        # message downstream ("no eval items"); a dropped set gets this one.
+        raise ValueError(
+            f"every one of the {errors} captures is an upstream error (empty reply, no "
+            f"usage) — nothing here is the incumbent's answer. Check the key and upstream "
+            f"the gateway was pointed at, then capture again."
+        )
     # Before clustering: a step's session is a fact about the log, not about
     # the sample, and the report counts loops over the whole corpus.
     # Keyed by object, not request id: real logs have every row sharing an
@@ -287,6 +310,7 @@ def distill(
         floor_applied=report.floor_applied,
         labels=tuple(labels),
         sessions=sessions,
+        errors=errors,
     )
 
 
