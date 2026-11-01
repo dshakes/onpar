@@ -116,6 +116,23 @@ _CASES = (
         H100,
         Requirements(Workload.BATCH, 32, prefix_sharing=0.9),
     ),
+    (
+        # vLLM tool calling: a known family so --enable-auto-tool-choice and
+        # --tool-call-parser must appear. Also checks --tool-strict-level.
+        "vllm tool calling, llama3",
+        "llama-3.1-8b",
+        "fp16",
+        H100,
+        Requirements(Workload.INTERACTIVE, 8, tool_calling=True),
+    ),
+    (
+        # SGLang tool calling on a Qwen model: --tool-call-parser qwen25.
+        "sglang tool calling, qwen3, high prefix sharing",
+        "qwen3-32b",
+        "q4",
+        H100,
+        Requirements(Workload.INTERACTIVE, 8, prefix_sharing=0.8, tool_calling=True),
+    ),
 )
 
 
@@ -201,6 +218,9 @@ def test_the_cases_cover_the_flags_worth_covering():
         "--max-loras-per-batch",
         "--kv-cache-dtype",
         "--host",
+        "--enable-auto-tool-choice",  # vllm tool calling
+        "--tool-call-parser",  # both engines (different values per family)
+        "--tool-strict-level",  # vllm envelope constraint
     ):
         assert flag in emitted, f"no case emits {flag}; it is validated by nothing"
 
@@ -434,3 +454,112 @@ def test_the_value_the_planner_actually_emits_is_accepted():
     # planner does not produce.
     r = SglangAdapter().translate(Setting.KV_CACHE_DTYPE, "fp8_e4m3")
     assert isinstance(r, Translated)
+
+
+# --- tool calling: parser must match the model family --------------------------
+
+
+@pytest.mark.parametrize(
+    ("repo", "vllm_parser", "sglang_parser"),
+    [
+        ("Qwen/Qwen3-32B", "hermes", "qwen25"),
+        ("Qwen/Qwen3-Coder-480B-A35B-Instruct", "qwen3_xml", "qwen3_coder"),
+        ("meta-llama/Llama-3.1-8B-Instruct", "llama3_json", "llama3"),
+        ("meta-llama/Llama-3.3-70B-Instruct", "llama3_json", "llama3"),
+        ("mistralai/Mistral-Small-24B-Instruct-2501", "mistral", "mistral"),
+        ("deepseek-ai/DeepSeek-V3", "deepseek_v3", "deepseekv3"),
+        ("THUDM/glm-4.5-9b", "glm45", "glm45"),
+        ("moonshotai/Kimi-K2-Instruct", "kimi_k2", "kimi_k2"),
+    ],
+)
+def test_known_family_maps_to_cited_parser_on_both_engines(repo, vllm_parser, sglang_parser):
+    """The parser name is what makes tool calls arrive as tool_calls; a wrong
+    name means every call comes back as plain text."""
+    from onpar.engines import Setting, SglangAdapter, Translated, VllmAdapter
+
+    v_out = VllmAdapter().translate(Setting.TOOL_CALLING, repo)
+    assert isinstance(v_out, Translated), f"vLLM refused {repo!r}: {v_out}"
+    argv = list(v_out.argv)
+    assert "--enable-auto-tool-choice" in argv
+    assert "--tool-call-parser" in argv
+    assert argv[argv.index("--tool-call-parser") + 1] == vllm_parser, (
+        f"vLLM: expected {vllm_parser!r} for {repo!r}, got {argv}"
+    )
+    assert "--tool-strict-level" in argv
+
+    s_out = SglangAdapter().translate(Setting.TOOL_CALLING, repo)
+    assert isinstance(s_out, Translated), f"SGLang refused {repo!r}: {s_out}"
+    assert s_out.argv == ("--tool-call-parser", sglang_parser), (
+        f"SGLang: expected {sglang_parser!r} for {repo!r}, got {s_out.argv}"
+    )
+
+
+@pytest.mark.parametrize(
+    "repo",
+    [
+        "google/gemma-3-27b-it",
+        "microsoft/phi-4",
+        "MiniMaxAI/MiniMax-M3",
+        "unknown-org/some-random-model",
+    ],
+)
+def test_unknown_repo_yields_unsupported_on_both_engines(repo):
+    """A family not in the verified table must not get a guessed parser name.
+
+    A wrong parser is worse than no parser: the engine starts, parses nothing,
+    and every tool call leaks back as text with no indication why.
+    """
+    from onpar.engines import Setting, SglangAdapter, Unsupported, VllmAdapter
+
+    v_out = VllmAdapter().translate(Setting.TOOL_CALLING, repo)
+    assert isinstance(v_out, Unsupported), f"vLLM guessed a parser for {repo!r}"
+    assert "no verified tool-call parser" in v_out.reason
+
+    s_out = SglangAdapter().translate(Setting.TOOL_CALLING, repo)
+    assert isinstance(s_out, Unsupported), f"SGLang guessed a parser for {repo!r}"
+    assert "no verified tool-call parser" in s_out.reason
+
+
+def test_llamacpp_emits_jinja_for_tool_calling():
+    """--jinja is the one flag llama-server exposes for tool calling.
+    Verified: tools/server/README.md (2026-10-31).
+    """
+    from onpar.engines import Setting, Translated, adapter_for
+
+    a = adapter_for("llama.cpp")
+    assert a is not None
+    out = a.translate(Setting.TOOL_CALLING, "meta-llama/Llama-3.1-8B-Instruct")
+    assert isinstance(out, Translated), out
+    assert "--jinja" in out.argv
+
+
+@pytest.mark.parametrize("engine", ["mlx", "ollama"])
+def test_mlx_and_ollama_tool_calling_is_unsupported_with_reason(engine):
+    """Neither engine exposes a verified server flag for tool calling.
+    The reason must name why so the caller knows what to do instead.
+    """
+    from onpar.engines import Setting, Unsupported, adapter_for
+
+    a = adapter_for(engine)
+    assert a is not None
+    out = a.translate(Setting.TOOL_CALLING, "meta-llama/Llama-3.1-8B-Instruct")
+    assert isinstance(out, Unsupported), f"{engine} unexpectedly translated tool_calling"
+    assert len(out.reason) > 20, f"{engine}: reason is too short to be informative"
+
+
+def test_deepseek_v31_does_not_match_v3_parser():
+    """DeepSeek-V3.1 repos contain 'DeepSeek-V3' as a substring. The table must
+    be ordered so V3.1 matches first, or both models get the wrong parser."""
+    from onpar.engines import Setting, SglangAdapter, Translated, VllmAdapter
+
+    v31_repo = "deepseek-ai/DeepSeek-V3.1"
+    v_out = VllmAdapter().translate(Setting.TOOL_CALLING, v31_repo)
+    assert isinstance(v_out, Translated), v_out
+    argv = list(v_out.argv)
+    assert argv[argv.index("--tool-call-parser") + 1] == "deepseek_v31", (
+        "V3.1 repo matched the V3 entry first; check table ordering"
+    )
+
+    s_out = SglangAdapter().translate(Setting.TOOL_CALLING, v31_repo)
+    assert isinstance(s_out, Translated), s_out
+    assert s_out.argv[s_out.argv.index("--tool-call-parser") + 1] == "deepseekv31"

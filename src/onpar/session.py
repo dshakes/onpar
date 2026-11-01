@@ -128,7 +128,7 @@ def _fmt_gb(b: float) -> str:
 #: Fields whose value must ALREADY be the right type, because coercing them is
 #: the defect rather than the fix. Checked before the coercion loop, so a
 #: field listed here can never take the untouched fall-through path.
-_STRICT_TYPES: dict[str, type] = {"structured_output": bool}
+_STRICT_TYPES: dict[str, type] = {"structured_output": bool, "tool_calling": bool}
 
 _REQUIREMENT_TYPES: dict[str, type] = {
     # `workload` was the one field this map was missing, and the one the error

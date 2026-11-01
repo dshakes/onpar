@@ -1824,13 +1824,18 @@ def agent_surface() -> None:
         W,
         H,
         "The agent surface, and its wall",
-        "Nine read-only tools, receipts and eval sets as resources confined to one "
+        "Ten read-only tools, receipts and eval sets as resources confined to one "
         "root, and three pre-built workflows. No verb moves production traffic.",
     )
     cols = [
         (
             "tools",
-            ["fit · where · explain", "advise · catalog", "prove · receipt", "guard · build"],
+            [
+                "fit · where · explain",
+                "advise · catalog · build",
+                "distill · prove",
+                "receipt · guard",
+            ],
         ),
         (
             "resources",

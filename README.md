@@ -19,7 +19,7 @@ leaderboard, on your own captured requests — that is one more command, and it
 answers per cluster with confidence intervals instead of a shrug.**
 
 [![status](https://img.shields.io/badge/status-beta-22d3ee?style=flat-square)](docs/50-roadmap.md)
-[![tests](https://img.shields.io/badge/tests-2258-34d399?style=flat-square)](#verification)
+[![tests](https://img.shields.io/badge/tests-2412-34d399?style=flat-square)](#verification)
 [![license](https://img.shields.io/badge/license-Apache--2.0-a78bfa?style=flat-square)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-read-fbbf24?style=flat-square)](https://dshakes.github.io/onpar/docs/)
 
@@ -166,6 +166,72 @@ they are built to disappoint you honestly:
   missing; an item that failed is an item to retry, never a cached success.
 - **A judge alone never promotes.** Nothing authorises a cutover except
   shadow mode against live traffic.
+- **The judge is measured, not just named.** Position bias (swap the answers,
+  see if the verdict follows the slot), length bias (did the longer answer win
+  more often than a coin flip, over enough decisions to say), and calibration
+  against the deterministic graders are all computed from the run itself. The
+  human-agreement rate is produced by `onpar label` — a blind A/B sitting over
+  the exact comparisons the judge saw — rather than typed into a flag.
+
+### Agentic workloads: the step is the unit
+
+Most traffic worth migrating in 2026 is an agent loop — one request per step,
+each a strict extension of the last, most of them tool calls. onpar replays
+each captured step **with everything the incumbent saw** — system prompt,
+prior turns, tool results, tool schemas, output format — and grades the one
+move the candidate makes. That is teacher-forced per-step evaluation, the
+protocol agent benchmarks use, and the only honest replay for a tool that does
+not run your tools ([ADR-0020](docs/adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+
+```
+AGENTIC — did the candidate make the same moves?
+  decision agreement 71% [36–92] ⚠ over 7 tool-context steps · κ=0.53 (moderate), chance-corrected
+  1 steps the candidate wrote text where the incumbent called a tool · 1 steps it called a tool where the incumbent answered
+  per tool, how often the candidate also called it:
+    refund                       67% [21–94] ⚠ of 3 · candidate called it 1× unprompted
+    lookup                      100% [21–100] ⚠ of 1
+```
+
+- **Decision agreement is chance-corrected.** Cohen's κ over the per-step
+  action (tool called, or `respond`), because raw agreement flatters a workload
+  where one action dominates. The two asymmetric failures are counted apart: a
+  model that writes prose where the incumbent refunded, and one that refunds
+  where the incumbent asked a question.
+- **Arguments are validated against the schema the request offered.** Wrong
+  type, missing required field, value outside the enum, a key the schema does
+  not declare, arguments that are not JSON, a tool that was never offered — all
+  deterministic, all before any judge is consulted. This is the commonest way an
+  open model fails an agentic task and it needs no LLM to see.
+- **Sessions are recovered from the log, structurally.** `onpar distill` links
+  steps whose messages are prefixes of one another into agent sessions, reports
+  how agentic the corpus is, and measures the share of prompt tokens that were a
+  re-sent prefix — the number that decides whether prefix reuse is worth turning
+  on, handed straight to the planner (`onpar build --prefix-sharing 0.49`) so
+  the engine config (vLLM `--enable-prefix-caching`, SGLang's radix cache) is
+  sized from your traffic, not a guess.
+- **The serving config knows the model calls tools.** With the wrong or
+  missing parser an engine returns the model's tool call as plain text, and
+  the suite flags it as `tool-leak` — a server fault that reads like a model
+  fault. `onpar build --tool-calling` emits the parser the model family needs
+  (vLLM `--enable-auto-tool-choice --tool-call-parser …`, SGLang's parser
+  names, llama.cpp `--jinja`), every flag cited to current docs, and a family
+  it cannot cite is reported as unsupported rather than guessed.
+- **Traces you already have.** `onpar distill --import traces.jsonl` reads a
+  Langfuse generations export or plain OpenAI request/response pairs (and
+  Anthropic-shaped records) into the same eval set, redacting on the way in
+  with the compiled extension and refusing without it unless you say
+  `--unredacted`. Kitaru's export format could not be verified, so it is not
+  claimed.
+- **Whole sessions, replayed from the recording.** `onpar prove
+  --replay-sessions` walks each multi-step agent session end to end: the
+  candidate's own turns are kept, its tool calls are answered with the tool
+  results the incumbent actually received, and the moment it calls something
+  the recording cannot answer the session stops — a miss is a stop, never a
+  live tool call. Reported as the share of sessions that followed the
+  incumbent's path to the end, with its interval.
+- **What it does not do:** execute your tools. A candidate that reaches the
+  same outcome by a different route reads as diverged, and the report says so
+  rather than claiming "task success".
 
 ## What it costs, and how sure you can be
 
@@ -203,6 +269,11 @@ onpar observe --upstream https://api.openai.com/v1
   listening http://127.0.0.1:8787
   point your base_url at http://127.0.0.1:8787/v1 and nothing else changes.
 ```
+
+It speaks all three API shapes agent frameworks use — OpenAI chat completions,
+the OpenAI Responses API and the Anthropic Messages API — and captures each as
+the same record, so a Claude-SDK agent and an OpenAI-SDK agent are proven the
+same way.
 
 Redaction runs *inside* the write path, so there is no code path that
 appends a record which skipped it — and a redaction failure drops the
@@ -307,6 +378,10 @@ with no install. Capturing and scoring your own traffic needs two more:
 pip install onpar onpar-gateway onpar-core   # observe, distill, prove
 ```
 
+`onpar doctor` checks all three at once, in the order the loop needs them, and
+ends with the one command to run next — so the missing piece is found up front
+rather than one stage at a time.
+
 `onpar-gateway` is the capture proxy; `onpar-core` is the compiled extension that
 reads captures back. Without them `onpar observe` refuses to start and `onpar
 distill` cannot read what was captured — both say so, and name the package, rather
@@ -332,16 +407,16 @@ nothing installed; a test fails if anything networked is even imported.
 ## Verification
 
 ```bash
-cargo test --all                                   # 251 Rust
+cargo test --all                                   # 296 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2007 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2116 Python
 ```
 
-**2258 tests.** 2007 Python, 251 Rust. Twenty-three of the Python tests skip on a
+**2412 tests.** 2116 Python, 296 Rust. Twenty-six of the Python tests skip on a
 bare machine. Eleven are environmental: nine need the compiled extension (`maturin
 develop` in `onpar-py/` turns them on), and two ask vLLM and SGLang for their
 own flags, which needs those engines installed. CI runs both inside the engines'
-published images, so neither skip reaches a green tick unasked. The other twelve
+published images, so neither skip reaches a green tick unasked. The other fifteen
 are the mutation harness reporting honestly that it had nothing to do: those
 modules declare no numeric constant to perturb, so there is nothing to mutate.
 Every module's `demo()` is *run* by a separate test, because that harness used
@@ -349,9 +424,9 @@ to skip when a demo failed — which is how two of them sat broken behind a gree
 tick. The Rust core denies `unwrap`/`expect`/`panic!`/slice-indexing at the lint level — a sizing or licence bug must not be a panic. Gateway tests run over **real TCP** against a **real** upstream, because a test that calls the handler directly passes even when the response is buffered.
 
 ```bash
-cargo test --all                                   # 251 Rust
+cargo test --all                                   # 296 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2007 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2116 Python
 ```
 
 Every module carries an assert-based `demo()` self-check runnable via
@@ -378,7 +453,7 @@ the response is buffered.
 | [80 — Plan](docs/80-implementation-plan.md) | M0–M10, acceptance criteria, risk gates. |
 | [90 — CI gating](docs/90-ci-gating.md) | Gate a deploy on a proof that still holds. |
 | [95 — GA readiness](docs/95-ga-readiness.md) | What is ready, what blocks GA, ranked — assessed by running the published packages. |
-| [ADRs](docs/adr/) | 19 decisions, including the two later reversed. |
+| [ADRs](docs/adr/) | 20 decisions, including the two later reversed. |
 
 The docs teach the whole inference stack from first principles —
 [start here](https://dshakes.github.io/onpar/docs/#edu-why) if you have

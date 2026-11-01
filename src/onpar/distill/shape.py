@@ -132,10 +132,16 @@ def from_capture_row(row: dict[str, Any]) -> Capture:
         prompt_tokens=row.get("prompt_tokens"),
         completion_tokens=row.get("completion_tokens"),
         tools=_dicts(row.get("tools")),
-        # Names, as the gateway records them — see `store::delta_tool_call` for
-        # why the arguments are not carried. `extract_shape` asks only whether
-        # this is empty.
-        tool_calls=tuple({"name": n} for n in row.get("tool_calls") or () if isinstance(n, str)),
+        # Name and redacted arguments, as the gateway records them since the
+        # suite began grading arguments. Logs written before that hold bare
+        # names, and a hand-made row may hold either; both are a call.
+        tool_calls=tuple(
+            {"name": c}
+            if isinstance(c, str)
+            else {k: v for k, v in c.items() if k in ("name", "arguments")}
+            for c in row.get("tool_calls") or ()
+            if isinstance(c, str) or (isinstance(c, dict) and c.get("name"))
+        ),
         response_format=row.get("response_format"),
         latency_ms=row.get("latency_ms"),
     )

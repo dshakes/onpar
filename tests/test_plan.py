@@ -428,21 +428,23 @@ def test_every_setting_the_adapter_supports_is_reachable_from_some_plan():
     for hw in (H100, replace(H100, devices=4)):
         for w in Workload:
             for structured in (False, True):
-                for fleet in fleets:
-                    for conc, ctx in ((8, 8192), (32, 32_768)):
-                        p = plan(
-                            hw,
-                            Requirements(
-                                w,
-                                concurrency=conc,
-                                context=ctx,
-                                structured_output=structured,
-                                lora=fleet,
-                            ),
-                            model=m,
-                            quant=m.quants[0],
-                        )
-                        reachable |= {k.name for k in p.knobs}
+                for tool_calling in (False, True):
+                    for fleet in fleets:
+                        for conc, ctx in ((8, 8192), (32, 32_768)):
+                            p = plan(
+                                hw,
+                                Requirements(
+                                    w,
+                                    concurrency=conc,
+                                    context=ctx,
+                                    structured_output=structured,
+                                    tool_calling=tool_calling,
+                                    lora=fleet,
+                                ),
+                                model=m,
+                                quant=m.quants[0],
+                            )
+                            reachable |= {k.name for k in p.knobs}
     assert reachable == set(Setting), (
         f"never emitted: {sorted(x.value for x in set(Setting) - reachable)}"
     )
@@ -874,3 +876,49 @@ def test_a_budget_that_could_not_be_checked_is_not_a_budget_that_was_met():
     # check, so there is nothing to warn about.
     silent = plan(_gpu(None), Requirements(Workload.REALTIME, 8), model, "q8")
     assert silent.meets_requirements, silent.warnings
+
+
+# --- tool calling --------------------------------------------------------------
+
+
+def test_tool_calling_knob_is_emitted_when_requested():
+    """Without the knob the engine never gets the parser flag, and tool calls
+    silently return as text — the tool-leak the eval suite flags."""
+    from onpar import catalog
+
+    m = catalog.get("llama-3.1-8b")
+    p = plan(H100, Requirements(Workload.INTERACTIVE, 8, tool_calling=True), model=m)
+    k = p.get(Setting.TOOL_CALLING)
+    assert k is not None, "tool_calling=True must produce a TOOL_CALLING knob"
+    # The value is the repo string so the adapter can look up the parser.
+    assert "meta-llama" in k.value, k.value
+    assert len(k.why) > 30
+
+
+def test_tool_calling_knob_is_absent_when_not_requested():
+    """An unused knob is a flag the engine never sees. No setting, no overhead."""
+    from onpar import catalog
+
+    m = catalog.get("llama-3.1-8b")
+    p = plan(H100, Requirements(Workload.INTERACTIVE, 8, tool_calling=False), model=m)
+    assert p.get(Setting.TOOL_CALLING) is None
+
+
+def test_tool_calling_knob_is_absent_without_a_model():
+    """The adapter needs the repo to look up the parser. No model, no knob —
+    the honest answer rather than an empty translation."""
+    p = plan(H100, Requirements(Workload.INTERACTIVE, 8, tool_calling=True))
+    assert p.get(Setting.TOOL_CALLING) is None
+
+
+def test_tool_calling_command_carries_the_parser_flags():
+    """End-to-end: a tool-calling plan translates to real argv on vLLM."""
+    from onpar import catalog
+
+    m = catalog.get("llama-3.1-8b")
+    p = plan(H100, Requirements(Workload.INTERACTIVE, 8, tool_calling=True), model=m)
+    argv, gaps = p.command(m.repo or m.id)
+    assert "--enable-auto-tool-choice" in argv, argv
+    assert "--tool-call-parser" in argv, argv
+    # The gap list must not carry a tool-calling failure — the adapter knows this family.
+    assert not any("tool_calling" in str(g) for g in gaps), gaps

@@ -136,9 +136,24 @@ Three tiers, cheapest first, escalating only when needed:
                   → expensive, subjective, LAST RESORT
 ```
 
+**Agentic steps are the unit** ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+A captured request inside an agent loop is replayed teacher-forced: the whole
+redacted conversation, the tool schemas offered and the output format go back to
+the candidate, and it is graded on the one move it makes. Tier 1 then also
+covers: arguments valid against the offered JSON schema (`ToolArgsSchema`), a
+tool call that arrived as text because the server's parser missed it
+(`ToolLeak` — a serving-config fault, named as such), and a tool that was never
+offered. Tier 3 sees tool calls rendered into both answers. Across all steps the
+report adds **decision agreement** — Cohen's κ over the per-step action, with
+the two asymmetric failures counted apart and a per-tool Wilson table — and the
+receipt carries it. Sessions are linked structurally from message prefixes, and
+the share of prompt tokens that were a re-sent prefix is handed to the planner's
+prefix-reuse decision.
+
 **Guardrails, because a wrong verdict here breaks a customer's production system:**
 - Position-swap every pairwise comparison; disagreement between orderings = low confidence, flagged not averaged.
-- Report judge–human agreement on a sampled subset. If we can't state it, we don't ship the verdict.
+- Report judge–human agreement on a sampled subset. If we can't state it, we don't ship the verdict. The subset is produced by `prove --judge-sample` and graded blind with `onpar label`; the rate is measured from that ledger, never typed.
+- Measure and disclose judge **length bias** (how often the longer answer won) beside position bias, because the swap cannot catch a verbosity preference.
 - Never let tier 3 alone authorize a cutover. Shadow mode (⑥) is the real gate — it scores against *live* traffic before anything is served.
 - The judge model is disclosed in every report. Using a closed model to judge whether you can leave closed models is an obvious conflict; it must be visible and swappable.
 

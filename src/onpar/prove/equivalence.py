@@ -22,6 +22,7 @@ as unknown rather than as a confident score. See :mod:`.stats`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from .cost import blended, saving
 from .graders import ItemResult
@@ -454,6 +455,11 @@ class Matrix:
     #: whenever a judge was used, because a judge that was never checked against
     #: anything is a claim, not a measurement.
     calibration: Calibration | None = None
+    #: Whether the judge favoured the longer answer, measured this run.
+    length_bias: Any = None
+    #: Decision agreement over the agentic steps — did the candidate make the
+    #: same moves. Present when any item was in a tool-using context.
+    agentic: Any = None
 
     def __post_init__(self) -> None:
         check_bar(self.bar)
@@ -581,6 +587,10 @@ class Matrix:
             out.append(self.agreement.render())
         if self.calibration is not None:
             out.append(self.calibration.render())
+        if self.length_bias is not None:
+            out.append(self.length_bias.render())
+        if self.agentic is not None and (block := self.agentic.render()):
+            out += ["", block]
 
         thin = [c for c in disclosed if c.interval.underpowered]
         if thin:

@@ -35,3 +35,7 @@ uv.lock
 # repo root during a check should never commit the output.
 /*-kernel/
 /fused-*/
+
+# never commit local secrets
+.env
+.env.*

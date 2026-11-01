@@ -45,6 +45,8 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 
 from ..events import event
+from .agentic import AgenticReport
+from .agentic import report as agentic_report
 from .equivalence import (
     DEFAULT_EQUIVALENCE_BAR,
     CandidateReport,
@@ -63,10 +65,12 @@ from .judge import (
     Comparison,
     JudgeFn,
     JudgeResult,
+    LengthBias,
     Reply,
     Verdict,
     calibrate,
     judge_item,
+    length_bias,
 )
 from .receipt import Claim, Discrepancy, Receipt, eval_set_digest, issue, verify
 from .stats import (
@@ -86,6 +90,7 @@ from .stats import (
 __all__ = [
     "DEFAULT_EQUIVALENCE_BAR",
     "Action",
+    "AgenticReport",
     "Agreement",
     "Calibration",
     "CandidateReport",
@@ -103,6 +108,7 @@ __all__ = [
     "ItemResult",
     "JudgeFn",
     "JudgeResult",
+    "LengthBias",
     "Matrix",
     "McNemar",
     "Outcome",
@@ -122,6 +128,7 @@ __all__ = [
     "grade",
     "issue",
     "judge_item",
+    "length_bias",
     "mcnemar",
     "pooled",
     "read_cluster",
@@ -162,6 +169,7 @@ def _judged(
     item: EvalItem,
     judge: JudgeFn,
     judge_model: str,
+    lengths: list[tuple[Verdict, int, int]] | None = None,
 ) -> ItemResult:
     """Add a judge verdict, but only where it can change the answer.
 
@@ -173,6 +181,8 @@ def _judged(
     if result.graded and not result.passed:
         return result
     verdict = judge_item(item, judge, judge_model)
+    if lengths is not None:
+        lengths.append((verdict.verdict, len(item.baseline), len(item.candidate)))
     return replace(result, scores=result.scores + (verdict.to_score(),))
 
 
@@ -266,10 +276,11 @@ def run(
     by_cluster: dict[str, list[ItemResult]] = defaultdict(list)
     seen: dict[tuple[str, str], int] = {}
     dupes: dict[str, int] = defaultdict(int)
+    lengths: list[tuple[Verdict, int, int]] = []
     for item in items:
         result = grade(item, graders)
         if judge is not None:
-            result = _judged(result, item, judge, judge_model)
+            result = _judged(result, item, judge, judge_model, lengths)
         # An identical prompt inside one cluster is the same question asked
         # twice, not two independent observations, and every interval below
         # assumes independence. Left in, the copies shrink the interval on
@@ -333,6 +344,10 @@ def run(
             if judge is not None
             else None
         ),
+        length_bias=length_bias(lengths, judge_model) if judge is not None else None,
+        # The same rows the cells were scored on, read for a different
+        # question: did the candidate take the same action at each step.
+        agentic=agentic_report(items),
     )
 
 
@@ -451,6 +466,7 @@ def suite(
             bar=bar,
             agreement=agreement,
             calibration=matrix.calibration,
+            agentic=matrix.agentic,
             traffic_captures=captures,
             traffic_window=traffic_window,
             # The rates the caller gave, carried into the artifact. Without

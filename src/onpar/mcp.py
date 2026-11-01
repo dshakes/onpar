@@ -313,19 +313,7 @@ def _prove(
     if not rows:
         raise ValueError(f"{eval_set} contains no eval items")
 
-    items = [
-        EvalItem(
-            item_id=str(r.get("item_id", i)),
-            cluster=str(r.get("cluster", "all")),
-            prompt=str(r.get("prompt", "")),
-            baseline=str(r.get("baseline", "")),
-            candidate=str(r.get("candidate", "")),
-            baseline_tool_calls=tuple(r.get("baseline_tool_calls", ()) or ()),
-            candidate_tool_calls=tuple(r.get("candidate_tool_calls", ()) or ()),
-            response_format=r.get("response_format"),
-        )
-        for i, r in enumerate(rows)
-    ]
+    items = [EvalItem.from_row(r, i) for i, r in enumerate(rows)]
     equal_weighted = not shares
     if equal_weighted:
         keys = sorted({i.cluster for i in items})
@@ -354,6 +342,13 @@ def _prove(
         # traffic-weighted one — a different and much stronger claim.
         "traffic_weighted": not equal_weighted,
         "judge_used": result.receipt.judge_model is not None,
+        # Did the candidate make the same moves — structured, so an agent reads
+        # kappa and the per-tool table rather than parsing the report text.
+        "agentic": (
+            result.matrix.agentic.to_dict()
+            if result.matrix.agentic is not None and result.matrix.agentic.steps
+            else None
+        ),
         "receipt": doc["receipt"],
         "receipt_digest": doc["digest"],
         "advisory": (
@@ -533,7 +528,17 @@ def _distill(
     return {
         "eval_set": doc,
         "items": len(doc.get("items", ())),
-        "report": report if isinstance(report, dict) else str(report),
+        "report": report.render(),
+        # How agentic the corpus is, as numbers an agent can branch on: whether to
+        # plan for prefix reuse, and whether the agentic block of the proof will
+        # carry any weight.
+        "sessions": {
+            "agent_sessions": report.sessions.multi_step,
+            "steps": report.sessions.multi_step_captures,
+            "agentic_share": round(report.sessions.agentic_share, 4),
+            "tool_steps": report.sessions.tool_captures,
+            "prefix_share": round(report.sessions.prefix_share, 4),
+        },
         "next": (
             "write this to a file and pass it to onpar_prove — this tool "
             "returns the eval set rather than writing it, because every tool "

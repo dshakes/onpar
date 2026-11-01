@@ -35,6 +35,49 @@ use serde::{Deserialize, Serialize};
 
 use super::redact::{self, Report};
 
+/// One tool call the model made, with its arguments already redacted.
+///
+/// Arguments are stored because in a multi-turn agent loop every step's
+/// `messages` already carries the previous steps' `tool_calls` with full
+/// arguments, so names-only protected only the final step and made argument
+/// grading impossible. Arguments go through the same `redact::redact` pass
+/// as the messages.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ToolCall {
+    /// The function name the model invoked.
+    pub name: String,
+    /// The arguments JSON string, exactly as the upstream sent it, redacted.
+    ///
+    /// Empty string when the call carried no arguments or was read from a
+    /// legacy log that stored names only.
+    #[serde(default)]
+    pub arguments: String,
+}
+
+/// Deserialise either the current `{"name":…,"arguments":…}` shape or the
+/// legacy bare-string shape `"refund"`, so existing logs remain readable.
+impl<'de> Deserialize<'de> for ToolCall {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Legacy(String),
+            Current {
+                name: String,
+                #[serde(default)]
+                arguments: String,
+            },
+        }
+        Ok(match Helper::deserialize(d)? {
+            Helper::Legacy(name) => ToolCall {
+                name,
+                arguments: String::new(),
+            },
+            Helper::Current { name, arguments } => ToolCall { name, arguments },
+        })
+    }
+}
+
 /// One captured exchange, already redacted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Capture {
@@ -62,13 +105,15 @@ pub struct Capture {
     /// tool-using workload clustered as toolless, and nothing said so.
     #[serde(default)]
     pub tools: serde_json::Value,
-    /// Names of the tools the response actually called — names only.
+    /// The tools the response called, with arguments redacted.
     ///
-    /// The distiller asks one question of this (`used_tools`: were any called),
-    /// so the arguments buy nothing, and arguments are where the user's data
-    /// lives. Names only is both sufficient and the smaller blast radius.
+    /// Previously stored names only; arguments are now recorded because in a
+    /// multi-turn agent loop every step's `messages` already carries the
+    /// previous steps' `tool_calls` with full arguments, redacted by
+    /// `redact_json`. Names-only protected only the final step and made
+    /// argument grading impossible.
     #[serde(default)]
-    pub tool_calls: Vec<String>,
+    pub tool_calls: Vec<ToolCall>,
     /// The output format the request demanded, when it demanded one.
     #[serde(default)]
     pub response_format: Option<String>,
@@ -247,6 +292,15 @@ impl CaptureStore {
                 *report.counts.entry(k).or_insert(0) += v;
             }
         }
+        // Redact arguments in every tool call (fail closed: `?` propagates
+        // RedactionRefused so no partial record is ever written).
+        for call in &mut c.tool_calls {
+            let (args, args_report) = redact::redact(&call.arguments)?;
+            for (k, v) in args_report.counts {
+                *report.counts.entry(k).or_insert(0) += v;
+            }
+            call.arguments = args;
+        }
         c.messages = messages;
         c.response = response;
         c.tools = tools;
@@ -345,12 +399,14 @@ impl CaptureStore {
     }
 }
 
-/// Names of the tools a complete, non-streamed response called.
+/// Tool calls in a complete, non-streamed response body.
 ///
 /// Empty when it called none, which is the common case and the one the
-/// distiller reads as "tools offered, unused".
+/// distiller reads as "tools offered, unused". Arguments are the raw JSON
+/// string as the upstream sent them; if the upstream sent an object,
+/// it is serialised to a string.
 #[must_use]
-pub fn body_tool_calls(body: &[u8]) -> Vec<String> {
+pub fn body_tool_calls(body: &[u8]) -> Vec<ToolCall> {
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
         return Vec::new();
     };
@@ -363,20 +419,32 @@ pub fn body_tool_calls(body: &[u8]) -> Vec<String> {
     calls
         .map(|a| {
             a.iter()
-                .filter_map(|c| tool_call_name(c).map(str::to_owned))
+                .filter_map(|c| {
+                    let name = tool_call_name(c)?.to_owned();
+                    let arguments = c
+                        .get("function")
+                        .and_then(|f| f.get("arguments"))
+                        .map(|a| match a {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        })
+                        .unwrap_or_default();
+                    Some(ToolCall { name, arguments })
+                })
                 .collect()
         })
         .unwrap_or_default()
 }
 
-/// A tool name carried by one streamed event, if it announces one.
+/// One tool-call fragment from a streamed event.
 ///
-/// Streamed tool calls arrive as fragments: the first carries the name, the
-/// rest carry slices of the JSON arguments. Only the first is of interest —
-/// `used_tools` is a boolean question, and the arguments are the part that
-/// holds the user's data.
+/// Returns `(index, name, arguments_fragment)`. The first fragment for a call
+/// carries the name; subsequent ones carry slices of the JSON arguments. The
+/// caller accumulates fragments by `index` into the final `Vec<ToolCall>`.
+/// `index` defaults to 0 when absent. Returns `None` when the event carries
+/// no tool-call fragment at all.
 #[must_use]
-pub fn delta_tool_call(event: &crate::sse::Event) -> Option<String> {
+pub fn delta_tool_call(event: &crate::sse::Event) -> Option<(usize, Option<String>, String)> {
     let crate::sse::Event::Data(payload) = event else {
         return None;
     };
@@ -387,9 +455,24 @@ pub fn delta_tool_call(event: &crate::sse::Event) -> Option<String> {
         .get("delta")?
         .get("tool_calls")?
         .as_array()?;
-    calls
-        .iter()
-        .find_map(|c| tool_call_name(c).map(str::to_owned))
+    let call = calls.first()?;
+    let func = call.get("function")?;
+    let index = call
+        .get("index")
+        .and_then(|i| i.as_u64())
+        .and_then(|i| usize::try_from(i).ok())
+        .unwrap_or(0);
+    let name = func
+        .get("name")
+        .and_then(|n| n.as_str())
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned);
+    let arguments = func
+        .get("arguments")
+        .and_then(|a| a.as_str())
+        .unwrap_or("")
+        .to_owned();
+    Some((index, name, arguments))
 }
 
 /// The name inside one tool-call object, streamed or complete.
@@ -738,5 +821,66 @@ mod tests {
         // Writing does create the path, because that is when it is needed.
         s.append(capture("hi", "ok")).unwrap();
         assert!(nested.exists());
+    }
+
+    // (a) Non-streamed body with two tool calls records both names and argument strings.
+    #[test]
+    fn body_tool_calls_records_names_and_argument_strings() {
+        let body = serde_json::to_vec(&json!({
+            "choices": [{"message": {"tool_calls": [
+                {"function": {"name": "refund", "arguments": "{\"amount\":99}"}},
+                {"function": {"name": "cancel", "arguments": "{\"id\":\"x\"}"}}
+            ]}}]
+        }))
+        .unwrap();
+        let calls = body_tool_calls(&body);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "refund");
+        assert_eq!(calls[0].arguments, "{\"amount\":99}");
+        assert_eq!(calls[1].name, "cancel");
+        assert_eq!(calls[1].arguments, "{\"id\":\"x\"}");
+    }
+
+    // (c) append redacts an email inside arguments and counts it.
+    #[test]
+    fn append_redacts_email_in_tool_call_arguments() {
+        let d = tempfile::tempdir().unwrap();
+        let s = CaptureStore::open(d.path().join("log"), &key()).unwrap();
+        let mut c = capture("hi", "ok");
+        c.tool_calls = vec![ToolCall {
+            name: "send_email".into(),
+            arguments: "{\"to\":\"ada@example.com\"}".into(),
+        }];
+        let report = s.append(c).unwrap();
+        let back = s.read_all().unwrap();
+        assert_eq!(back.len(), 1);
+        assert!(
+            !back[0].tool_calls[0].arguments.contains("ada@example.com"),
+            "raw email must not survive redaction"
+        );
+        assert!(
+            back[0].tool_calls[0].arguments.contains("<EMAIL>"),
+            "placeholder must appear"
+        );
+        assert!(
+            report.counts.values().any(|&n| n > 0),
+            "report must record the removal"
+        );
+    }
+
+    // (d) A record serialised with the legacy "tool_calls":["refund"] shape still deserialises.
+    #[test]
+    fn legacy_string_tool_calls_deserialise_with_empty_arguments() {
+        let json = r#"{"request_id":"r1","model":"m","backend":"b",
+            "messages":null,"response":"ok","prompt_tokens":null,
+            "completion_tokens":null,"duration_ms":0,
+            "tool_calls":["refund","cancel"],
+            "redacted":{"counts":{}}}"#;
+        let c: Capture = serde_json::from_str(json).unwrap();
+        assert_eq!(c.tool_calls.len(), 2);
+        assert_eq!(c.tool_calls[0].name, "refund");
+        assert_eq!(c.tool_calls[0].arguments, "");
+        assert_eq!(c.tool_calls[1].name, "cancel");
+        assert_eq!(c.tool_calls[1].arguments, "");
     }
 }

@@ -7,8 +7,9 @@
 //! [`mod@store`] holds the other half: redaction is applied *inside* the write
 //! path, so there is no way to append a record that skipped it.
 
+pub mod normalize;
 pub mod redact;
 pub mod store;
 
 pub use redact::{Kind, Refused, Report, redact};
-pub use store::{Capture, CaptureStore, StoreError};
+pub use store::{Capture, CaptureStore, StoreError, ToolCall};

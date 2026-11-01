@@ -24,9 +24,11 @@ cluster differs, and to rank candidates that the deterministic tiers tie.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from .graders import EvalItem, ItemResult, Score, Tier
 from .graders import Outcome as GraderOutcome
@@ -119,6 +121,75 @@ class JudgeResult:
         )
 
 
+#: How much of a system prompt the judge is shown. Enough to know the task;
+#: not the whole thing, because long system prompts are where the instructions
+#: that try to steer a judge live, and the markers only contain, not disarm.
+SYSTEM_CHARS = 1_500
+#: Prior turns shown before the step being judged.
+CONTEXT_TURNS = 6
+
+
+def _calls_text(calls: tuple[Any, ...]) -> str:
+    out = []
+    for c in calls:
+        if isinstance(c, str):
+            out.append(f"→ {c}()")
+            continue
+        if not isinstance(c, dict):
+            continue
+        fn = c.get("function") if isinstance(c.get("function"), dict) else c
+        name = fn.get("name") or "?"
+        args = fn.get("arguments")
+        if not isinstance(args, str):
+            args = json.dumps(args, sort_keys=True, default=str) if args else ""
+        out.append(f"→ {name}({args})")
+    return "\n".join(out)
+
+
+def render_answer(text: str, calls: tuple[Any, ...] = ()) -> str:
+    """One side of a comparison, with its tool calls made visible.
+
+    A tool-calling step usually has no text at all. Shown text-only, the judge
+    compared two empty strings and called them a tie — the agentic half of the
+    workload graded itself equivalent by construction.
+    """
+    parts = [p for p in (text.strip(), _calls_text(calls)) if p]
+    return "\n".join(parts) or "(no text, no tool calls)"
+
+
+def render_request(item: EvalItem) -> str:
+    """What the judge is told was asked.
+
+    For a step inside a conversation that is the system prompt (truncated), the
+    tools on offer by name, and the last few turns — enough to know what a good
+    next move is. Older eval sets with no messages fall back to the bare prompt.
+    """
+    if not item.messages:
+        return item.prompt
+    lines: list[str] = []
+    system = next((m for m in item.messages if m.get("role") == "system"), None)
+    if system:
+        text = str(system.get("content") or "")
+        cut = text[:SYSTEM_CHARS] + (" …" if len(text) > SYSTEM_CHARS else "")
+        lines.append(f"[system] {cut}")
+    if item.tools:
+        names = []
+        for t in item.tools:
+            fn = t.get("function") if isinstance(t.get("function"), dict) else t
+            if fn.get("name"):
+                names.append(str(fn["name"]))
+        lines.append(f"[tools offered] {', '.join(names)}")
+    turns = [m for m in item.messages if m.get("role") != "system"]
+    if len(turns) > CONTEXT_TURNS:
+        lines.append(f"[… {len(turns) - CONTEXT_TURNS} earlier turns omitted]")
+    for m in turns[-CONTEXT_TURNS:]:
+        role = str(m.get("role") or "?")
+        body = render_answer(str(m.get("content") or ""), tuple(m.get("tool_calls") or ()))
+        lines.append(f"[{role}] {body}")
+    lines.append("[the next assistant step is what is being judged]")
+    return "\n".join(lines)
+
+
 def judge_item(item: EvalItem, judge: JudgeFn, model: str) -> JudgeResult:
     """Compare candidate against baseline, both ways round.
 
@@ -133,9 +204,12 @@ def judge_item(item: EvalItem, judge: JudgeFn, model: str) -> JudgeResult:
     if not model.strip():
         raise ValueError("a judge model identifier is required for disclosure")
 
+    request = render_request(item)
+    base = render_answer(item.baseline, item.baseline_tool_calls)
+    cand = render_answer(item.candidate, item.candidate_tool_calls)
     # Pass 1: baseline first. Pass 2: candidate first.
     try:
-        r1 = judge(Comparison(item.prompt, a=item.baseline, b=item.candidate))
+        r1 = judge(Comparison(request, a=base, b=cand))
         v1 = r1.as_verdict(candidate_is="b")
     except Exception as e:  # noqa: BLE001 — a judge failure must not abort the run
         return JudgeResult(
@@ -147,7 +221,7 @@ def judge_item(item: EvalItem, judge: JudgeFn, model: str) -> JudgeResult:
             f"judge error: {e}",
         )
     try:
-        r2 = judge(Comparison(item.prompt, a=item.candidate, b=item.baseline))
+        r2 = judge(Comparison(request, a=cand, b=base))
         v2 = r2.as_verdict(candidate_is="a")
     except Exception as e:  # noqa: BLE001
         return JudgeResult(
@@ -264,6 +338,69 @@ class Calibration:
             f"({state}, floor {CALIBRATION_FLOOR:.0%} over "
             f"{MIN_CALIBRATION_ITEMS}+ items)"
         )
+
+
+#: Decisive verdicts below which a length preference is noise, not a bias.
+MIN_LENGTH_BIAS_ITEMS = 10
+
+
+@dataclass(frozen=True, slots=True)
+class LengthBias:
+    """How often the judge picked the longer answer, where it picked one.
+
+    Verbosity preference is the best-documented failure of an LLM judge: given
+    two answers of equal merit it tends to prefer the one that says more. The
+    position swap cannot catch it, because the longer answer is longer in both
+    orderings. So it is measured and disclosed, like position bias is — a rate
+    with an interval, never a bare number, and never a reason to change a score.
+    """
+
+    longer: int
+    decisive: int
+    model: str
+
+    @property
+    def interval(self) -> Interval:
+        return wilson(self.longer, self.decisive)
+
+    @property
+    def suspicious(self) -> bool:
+        """Whether the longer answer won often enough to say so out loud.
+
+        The whole interval above a coin flip, over enough decisions to mean it.
+        A knob, stated so it can be argued with.
+        """
+        return self.decisive >= MIN_LENGTH_BIAS_ITEMS and self.interval.low > 0.5
+
+    def render(self) -> str:
+        if self.decisive < MIN_LENGTH_BIAS_ITEMS:
+            return (
+                f"judge length bias: {self.model} · not measurable "
+                f"({self.decisive} decisive verdicts, {MIN_LENGTH_BIAS_ITEMS} needed)"
+            )
+        state = (
+            "⚠ prefers the longer answer" if self.suspicious else "no verbosity preference shown"
+        )
+        return (
+            f"judge length bias: {self.model} chose the longer answer in "
+            f"{self.interval.render()} of {self.decisive} decisive verdicts — {state}"
+        )
+
+
+def length_bias(records: Sequence[tuple[Verdict, int, int]], model: str) -> LengthBias:
+    """``records`` are ``(verdict, baseline chars, candidate chars)`` per judged item.
+
+    Ties and uncertain verdicts are not decisions and are left out; so are items
+    where both answers are the same length, since neither is the longer one.
+    """
+    longer = decisive = 0
+    for v, b, c in records:
+        if v not in (Verdict.BASELINE_BETTER, Verdict.CANDIDATE_BETTER) or b == c:
+            continue
+        decisive += 1
+        winner_len = b if v is Verdict.BASELINE_BETTER else c
+        longer += winner_len == max(b, c)
+    return LengthBias(longer=longer, decisive=decisive, model=model)
 
 
 def calibrate(results: Sequence[ItemResult], model: str) -> Calibration:

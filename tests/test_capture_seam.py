@@ -90,14 +90,24 @@ def test_the_proxy_fills_the_fields_and_does_not_leave_them_default():
     """A field on the struct that nothing assigns is the same blindness with an
     extra step — the struct would satisfy the test above and still record
     nothing. Both completion paths must set the response-side one."""
-    src = PROXY.read_text()
-    for expr in (
-        'parsed\n            .get("tools")',
-        'parsed\n            .get("response_format")',
-    ):
-        assert expr in src, f"the proxy never reads {expr!r} off the request"
-    assert "store::body_tool_calls(&bytes)" in src, "non-streamed responses record no tool calls"
-    assert "store::delta_tool_call(ev)" in src, "streamed responses record no tool calls"
+    proxy = PROXY.read_text()
+    normalize = (PROXY.parent / "capture" / "normalize.rs").read_text()
+    # The request-side fields are read where each API shape is normalised.
+    # Whitespace-tolerant: rustfmt re-indents these chains whenever the struct
+    # literal around them grows, and a seam test that fails on indentation is a
+    # seam test people learn to ignore.
+    for field in ("tools", "response_format"):
+        assert re.search(rf'\.get\("{field}"\)', normalize), (
+            f"nothing reads {field!r} off the request"
+        )
+    # The response side goes through one dispatch for every route, so a fourth
+    # API shape cannot be wired for text and forgotten for tool calls.
+    assert "(ops.body_tool_calls)(&bytes)" in proxy, "non-streamed responses record no tool calls"
+    assert "(ops.delta_tool_call)(ev)" in proxy, "streamed responses record no tool calls"
+    routes = proxy.count("body_tool_calls:") - 1  # the struct field itself
+    assert routes >= 3 and proxy.count("delta_tool_call:") - 1 == routes, (
+        "every API shape must supply both tool-call readers"
+    )
 
 
 # --- the converter itself --------------------------------------------------------

@@ -68,9 +68,10 @@ __all__ = [
 
 #: Format identifier. A reader that does not recognise this must refuse the file
 #: rather than interpret fields it may be guessing at.
-FORMAT = "onpar.receipt/v2"
+FORMAT = "onpar.receipt/v3"
 
-#: Formats this can read. v2 added `incumbent_cost`/`candidate_cost`.
+#: Formats this can read. v2 added `incumbent_cost`/`candidate_cost`; v3 added
+#: `agentic`, the decision-agreement block over tool-using steps.
 #:
 #: Adding *any* field to `Receipt` changes `asdict`, which changes the digest,
 #: which made every receipt 1.0.0 issued report as **altered since it was
@@ -79,7 +80,7 @@ FORMAT = "onpar.receipt/v2"
 #: the document that was sealed, so a v1 document is digested over the fields
 #: v1 had, and v2 over all of them. Neither is weakened: each covers everything
 #: its own document contains.
-SUPPORTED_FORMATS = ("onpar.receipt/v1", FORMAT)
+SUPPORTED_FORMATS = ("onpar.receipt/v1", "onpar.receipt/v2", FORMAT)
 
 #: Exactly the fields `onpar.receipt/v1` carried. Frozen — this is a
 #: historical fact about files already on disk, not a list to keep current.
@@ -105,6 +106,9 @@ _V1_FIELDS = frozenset(
         "format",
     }
 )
+
+#: Exactly the fields `onpar.receipt/v2` carried. Frozen for the same reason.
+_V2_FIELDS = _V1_FIELDS | {"incumbent_cost", "candidate_cost"}
 
 
 def _canonical(obj: Any) -> bytes:
@@ -395,6 +399,13 @@ class Receipt:
     #: model change invalidates the receipt instead of quietly outliving it.
     fingerprints: dict[str, str] = field(default_factory=dict)
     tool_version: str = ""
+    #: Decision agreement over the tool-using steps, flat so the type sweep
+    #: covers it: `steps`, `agreed`, `agreement_low`, `agreement_high`,
+    #: `talked_instead`, `acted_unasked`, and `kappa` when it is defined.
+    #: Empty when no step was in a tool-using context. Not a claim group — it
+    #: never moves a cluster — but a reader deciding about an agent workload
+    #: needs it on the artifact, not only on the terminal.
+    agentic: dict[str, float] = field(default_factory=dict)
     format: str = FORMAT
 
     def __post_init__(self) -> None:
@@ -556,12 +567,13 @@ class Receipt:
         Any alteration — a number, a cluster, the date — changes it.
         """
         payload = asdict(self)
-        if self.format == "onpar.receipt/v1":
-            # A v1 file was sealed before these fields existed. Digesting them
-            # into it would retroactively invalidate every receipt already
-            # issued — see SUPPORTED_FORMATS. A v1 receipt cannot *carry* cost,
-            # so nothing is left uncovered by leaving it out.
-            payload = {k: v for k, v in payload.items() if k in _V1_FIELDS}
+        # A file is digested over the fields its own format had. Digesting a
+        # later field into an earlier document would retroactively invalidate
+        # every receipt already issued — see SUPPORTED_FORMATS. An older receipt
+        # cannot *carry* the newer field, so nothing is left uncovered.
+        sealed = {"onpar.receipt/v1": _V1_FIELDS, "onpar.receipt/v2": _V2_FIELDS}.get(self.format)
+        if sealed is not None:
+            payload = {k: v for k, v in payload.items() if k in sealed}
         return hashlib.sha256(_canonical(payload)).hexdigest()
 
     # --- portability ----------------------------------------------------------
@@ -695,6 +707,15 @@ class Receipt:
                 out.append(self.judge_calibration)
         else:
             out.append("Judge: none used — every claim is from deterministic graders")
+        if self.agentic:
+            a = self.agentic
+            k = f" · κ={a['kappa']:.2f}" if "kappa" in a else ""
+            out.append(
+                f"Agentic: same move on {a['agreement_low']:.0%}–{a['agreement_high']:.0%} of "
+                f"{int(a['steps'])} tool-context steps{k} · "
+                f"{int(a['talked_instead'])} answered where a tool was called, "
+                f"{int(a['acted_unasked'])} called a tool where an answer was"
+            )
         if self.traffic_captures:
             out.append(
                 f"Drawn from {self.traffic_captures} captured requests"
@@ -722,6 +743,7 @@ def issue(
     tool_version: str = "",
     incumbent_cost: float = 0.0,
     candidate_cost: float = 0.0,
+    agentic: Any = None,
 ) -> Receipt:
     """Turn a scored candidate into a receipt.
 
@@ -784,7 +806,26 @@ def issue(
         candidate_cost=candidate_cost,
         fingerprints=dict(fingerprints or {}),
         tool_version=tool_version,
+        agentic=_agentic_fields(agentic),
     )
+
+
+def _agentic_fields(report: Any) -> dict[str, float]:
+    """The agentic block as flat numbers, or nothing when no step was agentic."""
+    if report is None or not getattr(report, "steps", 0):
+        return {}
+    iv = report.interval
+    out = {
+        "steps": float(report.steps),
+        "agreed": float(report.agreed),
+        "agreement_low": round(iv.low, 4),
+        "agreement_high": round(iv.high, 4),
+        "talked_instead": float(report.talked_instead),
+        "acted_unasked": float(report.acted_unasked),
+    }
+    if report.kappa is not None:
+        out["kappa"] = round(report.kappa, 4)
+    return out
 
 
 @dataclass(frozen=True, slots=True)
