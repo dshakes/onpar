@@ -469,7 +469,9 @@
         before it touches disk, clustered by task shape. Agent loops are replayed one
         <em>step</em> at a time with everything the incumbent saw — system prompt, tool
         schemas, prior tool results — and scored on the move: same tool, valid arguments,
-        chance-corrected agreement.</p>
+        chance-corrected agreement. Whole sessions are replayed from the recording, and
+        stop at the first call the recording cannot answer.</p>
+      <img src="assets/agentic-replay.svg" alt="Agentic evals: the step is the unit — one step replayed teacher-forced, and a whole session replayed from the recording" style="width:100%;margin-top:12px;border-radius:8px">
     </div>
     <div class="card">
       <div class="cardtop"><span class="ico">🎲</span><span class="tag bad">no confidence</span></div>

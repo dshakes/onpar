@@ -183,6 +183,8 @@ move the candidate makes. That is teacher-forced per-step evaluation, the
 protocol agent benchmarks use, and the only honest replay for a tool that does
 not run your tools ([ADR-0020](docs/adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
 
+<img src="docs/assets/agentic-replay.svg" alt="Agentic evals: the step is the unit. Left: one captured step replayed teacher-forced — the candidate receives the system prompt, every prior turn, the tool results and the tool schemas the incumbent had, and is graded on the one move it makes. Right: a whole session replayed from the recording, stopping at the first call the recording cannot answer." width="100%">
+
 ```
 AGENTIC — did the candidate make the same moves?
   decision agreement 71% [36–92] ⚠ over 7 tool-context steps · κ=0.53 (moderate), chance-corrected

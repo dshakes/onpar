@@ -57,6 +57,7 @@ Sequenced so each phase ships something **independently useful** — no phase is
 
 - Three-tier grader stack
 - Position-swapped pairwise judging with disclosed agreement rates
+- Agentic steps replayed with everything the incumbent saw; whole sessions replayed from the recording; decision agreement chance-corrected ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)) — *shipped 2026-10-31*
 - Equivalence matrix view with full drill-down
 - Regret clustering + hybrid policy recommendation
 - Shareable exported report

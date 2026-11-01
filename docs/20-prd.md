@@ -80,6 +80,8 @@ Run feasible candidates against the distilled eval set. Grade with a three-way s
 
 Plus **regret analysis**: the named, clustered tasks where open loses — so you keep a closed fallback for exactly those and nothing more.
 
+For agent traffic the unit is the **step**: each captured request is replayed with the whole conversation, tool results and tool schemas the incumbent had, and graded on the one move the candidate makes (same tool, arguments valid against the offered schema, no tool call leaked as text). Decision agreement is reported chance-corrected (Cohen's κ) with a per-tool table, and whole sessions are replayed from the recording — tool calls answered with the results the incumbent received, stopping at the first the recording cannot answer ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
+
 ### ⑤ Deploy — generated, not wrapped
 Emit **native** config for the chosen target, tuned by ③:
 - **Local Mac** → mlx (concurrency) or llama.cpp Metal (single-stream) or Ollama (zero-config), with mlx-lm spec-decode
@@ -114,6 +116,12 @@ Open models ship weekly (Kimi K3 landed 2026-07-16). Watch releases → auto-run
 | FR-9 | Run candidates against eval set; assertions + graders + pairwise judge | 4 |
 | FR-10 | Equivalence matrix with per-cluster scores and confidence intervals | 4 |
 | FR-11 | Regret analysis: named clusters where open loses | 4 |
+| FR-11a | Agentic steps replayed teacher-forced with the full captured conversation, tool schemas and output format; arguments validated against the offered schema; a tool call returned as text is a failed call | 4 |
+| FR-11b | Decision agreement over tool-using steps, chance-corrected (Cohen's κ), with a per-tool interval table, on the report and the receipt | 4 |
+| FR-11c | Whole agent sessions replayed from the recording, tool calls answered with recorded results; a miss stops the session and never triggers a live tool call | 4 |
+| FR-11d | Judge human-agreement measured from a blind labelling ledger (`onpar label`), never typed; judge length bias disclosed beside position bias | 4 |
+| FR-2a | Capture the Anthropic Messages and OpenAI Responses APIs as the same record as chat completions, tool-call arguments included and redacted | 1 |
+| FR-5a | Import Langfuse generation exports and OpenAI request/response pairs into the eval set, redacting on the way in | 2 |
 | FR-12 | Generate native config: mlx, llama.cpp, vLLM, SGLang, KServe, llm-d + GAIE | 5 |
 | FR-13 | Auto-configure speculative decoding (EAGLE-3/P-EAGLE/mlx spec) tuned to observed concurrency; disable it when observed batch exceeds the acceptance cliff | 5 |
 | FR-13a | Auto-tune quantization, prefix/radix caching, tensor+pipeline parallelism, `max_model_len`, `max_num_seqs`, chunked prefill, KV dtype, and memory utilization — none of them prompted | 5 |

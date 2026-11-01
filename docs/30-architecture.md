@@ -136,6 +136,8 @@ Three tiers, cheapest first, escalating only when needed:
                   → expensive, subjective, LAST RESORT
 ```
 
+<img src="assets/agentic-replay.svg" alt="Agentic evals: one step replayed teacher-forced with everything the incumbent saw, and a whole session replayed from the recording until the recording cannot answer." width="100%">
+
 **Agentic steps are the unit** ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)).
 A captured request inside an agent loop is replayed teacher-forced: the whole
 redacted conversation, the tool schemas offered and the output format go back to
