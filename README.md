@@ -187,10 +187,10 @@ Every layer has a good incumbent. The gap is the seam between them. As of 31 Oct
 
 <img src="docs/assets/landscape-2026.svg" alt="Where onpar sits on 31 Oct 2026: six capabilities across five tools. Kitaru replays sessions, Langfuse runs experiments on traces, Braintrust is closed and hosted, promptfoo scores outputs and LiteLLM is a gateway with no quality judgement. Only onpar covers the whole path from capture to a cutover gate with rollback." width="100%">
 
-| | capture | replay | stats verdict | sizing | native config | cutover gate |
+| | capture | replay | stats verdict | sizing | native config | cutover gate + rollback |
 |---|---|---|---|---|---|---|
-| Kitaru | SDK or trace import | sessions, tools from the recording | — | — | — | regression cohorts |
-| Langfuse | SDK traces | experiments on prod traces | — | — | — | CI action |
+| Kitaru | SDK or trace import | sessions, tools from the recording | — | — | — | CI regression cohorts, not a cutover |
+| Langfuse | SDK traces | experiments on prod traces | — | — | — | CI action, not a cutover |
 | Braintrust | hosted traces | trace to experiment | — | — | — | — |
 | promptfoo | — | output-level | — | — | — | — |
 | LiteLLM | proxy | — | — | — | — | — |
@@ -233,7 +233,7 @@ cargo clippy --all-targets -- -D warnings
 uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2232 Python
 ```
 
-**2529 tests.** 2232 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. Every number on this page is recomputed by a test. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
+**2529 tests.** 2232 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. The fit transcript, the saving line, the install pins and the test counts on this page are checked by tests; the market figures are dated and sourced. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
 
 ## What's in the repo
 

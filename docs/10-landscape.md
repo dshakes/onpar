@@ -2,7 +2,7 @@
 
 **Dated 31 Oct 2026.** Stars and release dates come from the GitHub API on that day. Pricing is from the vendor page where one exists, otherwise a third-party tracker (marked 3P). onpar itself: v1.3.4, 2 stars.
 
-**The finding:** every product below covers one stage of the seven-stage loop. The nearest one, Kitaru, replays sessions but sizes no hardware and signs no receipt. Nobody ships the whole path from your traffic to a statistical verdict to a rollback.
+**The finding:** no product below covers more than one of the six capabilities in the matrix, and three cover none. The nearest one, Kitaru, replays sessions but sizes no hardware and signs no receipt. Nobody ships the whole path from your traffic to a statistical verdict to a rollback.
 
 <img src="assets/landscape-2026.svg" alt="Coverage matrix for the five closest products and onpar across six capabilities: capture proxy, session replay with recorded tool results, statistical verdict, hardware sizing, native serving config, and a cutover gate with rollback. Dated 31 Oct 2026." width="100%">
 
