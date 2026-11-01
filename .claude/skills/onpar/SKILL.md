@@ -96,9 +96,9 @@ drop the interval. Do not.
 
 ## As an agent, over MCP
 
-Ten read-only tools: `onpar_fit`, `onpar_explain`, `onpar_where`,
+Eleven read-only tools: `onpar_fit`, `onpar_explain`, `onpar_where`,
 `onpar_catalog`, `onpar_advise`, `onpar_build`, `onpar_distill`,
-`onpar_prove`, `onpar_receipt`, `onpar_guard`.
+`onpar_prove`, `onpar_receipt`, `onpar_guard`, `onpar_learn`.
 
 **None of them can move traffic**, and that is enforced by a test over the live
 registry rather than by convention. Starting a server, spending money, and

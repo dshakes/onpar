@@ -1834,3 +1834,120 @@ def test_the_teaching_table_agrees_with_the_roofline_it_teaches():
     assert not wrong, (
         "the teaching table publishes throughput the roofline does not produce: " + "; ".join(wrong)
     )
+
+
+# --- fit-explorer.json drift tests --------------------------------------------
+# The JSON in site/assets/fit-explorer.json is precomputed by tools/site_data.py
+# from the real solver.  These tests re-run the solver against a sample of
+# (profile, context, concurrency) × model combinations and assert exact agreement
+# on every field the page renders.
+
+
+_EXPLORER_PATH = Path(__file__).resolve().parents[1] / "site" / "assets" / "fit-explorer.json"
+
+
+def _explorer_data() -> dict:
+    assert _EXPLORER_PATH.exists(), (
+        "site/assets/fit-explorer.json is missing — run `python3 tools/site_data.py` to generate it"
+    )
+    return json.loads(_EXPLORER_PATH.read_text())
+
+
+@pytest.fixture(scope="module")
+def explorer():
+    return _explorer_data()
+
+
+def test_fit_explorer_page_references_json():
+    """The HTML page must fetch the file it claims to render."""
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "site" / "index.html").read_text()
+    assert "fit-explorer.json" in html, (
+        "site/index.html does not reference fit-explorer.json — "
+        "the explore section will never load its data"
+    )
+
+
+def test_fit_explorer_version_matches_package(explorer):
+    """The JSON was generated from this version of the solver, not an older one."""
+    root = Path(__file__).resolve().parents[1]
+    m = re.search(r'^version\s*=\s*"([^"]+)"', (root / "pyproject.toml").read_text(), re.M)
+    assert m, "no version in pyproject.toml"
+    assert explorer["meta"]["version"] == m.group(1), (
+        f"fit-explorer.json carries version {explorer['meta']['version']!r} "
+        f"but pyproject.toml says {m.group(1)!r} — regenerate with tools/site_data.py"
+    )
+
+
+def test_fit_explorer_tps_note_present(explorer):
+    """Invariant 6: every throughput figure carries its basis."""
+    assert "roofline" in explorer["meta"].get("tps_note", ""), (
+        "fit-explorer.json meta.tps_note must say 'roofline' so the page can "
+        "render the disclosure beside every tok/s figure"
+    )
+
+
+@pytest.mark.parametrize(
+    "profile_id,ctx,conc,model_id",
+    [
+        # Three profiles × three contexts × one concurrency each, and three models
+        # chosen for coverage: a small model that fits everywhere, a medium one
+        # that fits on most hardware, and a very large MoE that fits nowhere small.
+        ("h100", 8_192, 1, "llama-3.1-8b"),
+        ("h100", 8_192, 1, "qwen3-32b"),
+        ("h100", 8_192, 1, "kimi-k3"),
+        ("m4-max-128", 32_768, 8, "llama-3.1-8b"),
+        ("m4-max-128", 32_768, 8, "qwen3-32b"),
+        ("m4-max-128", 32_768, 8, "kimi-k3"),
+        ("tpu-v6e-8", 131_072, 32, "llama-3.1-8b"),
+        ("tpu-v6e-8", 131_072, 32, "qwen3-32b"),
+        ("tpu-v6e-8", 131_072, 32, "kimi-k3"),
+    ],
+)
+def test_fit_explorer_rows_match_solver(profile_id, ctx, conc, model_id, explorer):
+    """The precomputed JSON must agree with a fresh solve on every field the page
+    renders: quant, weights_gb, kv_gb, total_gb, feasibility, and tok/s."""
+    from onpar import catalog
+    from onpar.catalog import QUANT_BITS
+    from onpar.fit import best_quant, solve
+    from onpar.hardware_catalog import get as get_profile
+
+    key = f"{profile_id}/{ctx}/{conc}"
+    assert key in explorer["data"], f"key {key!r} missing from fit-explorer.json"
+    entry = explorer["data"][key]
+
+    model_list = {e["id"]: i for i, e in enumerate(explorer["models"])}
+    assert model_id in model_list, f"model {model_id!r} not in fit-explorer.json models list"
+    m_idx = model_list[model_id]
+
+    row = next((r for r in entry["rows"] if r[0] == m_idx), None)
+    assert row is not None, f"model {model_id!r} missing from rows in {key!r}"
+    # row = [model_idx, quant, weights_gb, kv_gb, total_gb, feasible, reason|null, tps|null]
+    _, quant_json, w_json, kv_json, tot_json, ok_json, reason_json, tps_json = row
+
+    m = catalog.get(model_id)
+    hw = get_profile(profile_id).to_hardware()
+    fit = best_quant(m, hw, ctx, conc)
+
+    if fit:
+        assert ok_json is True, f"{model_id} @ {key}: JSON says not feasible, solver says it is"
+        assert quant_json == fit.quant, f"{model_id} @ {key}: quant"
+        assert w_json == round(fit.weight_bytes / GB, 1), f"{model_id} @ {key}: weights_gb"
+        assert kv_json == round(fit.kv_bytes / GB, 1), f"{model_id} @ {key}: kv_gb"
+        assert tot_json == round(fit.total_bytes / GB, 1), f"{model_id} @ {key}: total_gb"
+        expected_tps = round(fit.tokens_per_sec) if fit.tokens_per_sec else None
+        assert tps_json == expected_tps, f"{model_id} @ {key}: tps"
+    else:
+        assert ok_json is False, f"{model_id} @ {key}: JSON says feasible, solver says it is not"
+        # Smallest-quant probe to recover the stored bytes.
+        smallest = min(m.quants, key=lambda q: QUANT_BITS[q])
+        probe = solve(m, smallest, hw, ctx, conc)
+        assert quant_json == smallest, f"{model_id} @ {key}: rejected quant"
+        assert w_json == round(probe.weight_bytes / GB, 1), (
+            f"{model_id} @ {key}: rejected weights_gb"
+        )
+        assert kv_json == round(probe.kv_bytes / GB, 1), f"{model_id} @ {key}: rejected kv_gb"
+        assert tot_json == round(probe.total_bytes / GB, 1), (
+            f"{model_id} @ {key}: rejected total_gb"
+        )
+        assert reason_json, f"{model_id} @ {key}: rejected model must have a non-empty reason"
