@@ -137,6 +137,8 @@ Nothing downstream can run without local weights.
 - Regret analysis: cluster and *name* the failure modes; recommend hybrid policy
 - Publish judge–human agreement on a sampled subset; a cell with no confidence shows `?`
 - Shareable exported report
+- Agentic: every step replayed teacher-forced with the captured conversation and tool schemas; schema-validated arguments; tool-leak detection; Cohen's κ decision agreement; whole-session replay from the recording ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)) — *shipped*
+- The agreement subset is produced by `prove --judge-sample` and graded blind by `onpar label` — *shipped*
 
 **Longest milestone, deliberately.** Budget more time for grader calibration than for code.
 

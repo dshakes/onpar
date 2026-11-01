@@ -1871,6 +1871,91 @@ def agent_surface() -> None:
     save("agent-surface.svg", p)
 
 
+def agentic_replay() -> None:
+    """Agentic evals: one step teacher-forced, then the whole loop from the recording.
+
+    The claim worth drawing is what the candidate is *handed*. Replaying the
+    bare user prompt was the defect; the diagram shows the full prefix going
+    back, the one move being graded, and — on the right — a session walked to
+    the point where the recording can no longer answer.
+    """
+    W, H = 860, 470
+    desc = (
+        "Left: one captured step replayed teacher-forced — the candidate receives the "
+        "system prompt, every prior turn, the tool results and the tool schemas the "
+        "incumbent had, and is graded on the one move it makes: same tool, arguments "
+        "valid against the offered schema, no tool call leaked as text, the judge shown "
+        "both calls. Right: a whole session replayed from the recording — the "
+        "candidate's own turns are kept, its tool calls are answered with the results "
+        "the incumbent received, and the session stops at the first call the recording "
+        "cannot answer. A miss is a stop, never a live tool call."
+    )
+    p = head(W, H, "Agentic evals: the step is the unit", desc)
+    small = 'class="t" style="font-size:13px"'
+
+    # Left panel: the prefix that goes back, then the graded move.
+    p.append(f'<text x="40" y="66" {small}>One step, teacher-forced</text>')
+    turns = [
+        ("system", "You are the refunds desk. Use tools.", "#63758f"),
+        ("user", "refund order 42", "#0e9bbd"),
+        ("assistant", '→ lookup({"order_id": 42})', "#8b5cf6"),
+        ("tool", '{"status": "delivered", "amount": 80}', "#c2820b"),
+        ("tools offered", "lookup · refund · escalate", "#63758f"),
+    ]
+    for i, (role, body, colour) in enumerate(turns):
+        y = 84 + i * 40
+        p.append(f'<rect x="40" y="{y}" width="370" height="32" rx="6" fill="var(--panel)"/>')
+        p.append(f'<rect x="40" y="{y}" width="4" height="32" rx="2" fill="{colour}"/>')
+        p.append(f'<text x="54" y="{y + 20}" class="lb">{role}</text>')
+        p.append(f'<text x="150" y="{y + 20}" class="m">{body}</text>')
+    p.append('<text x="40" y="300" class="sub">everything the incumbent saw goes back →</text>')
+    y = 312
+    p.append(
+        f'<rect x="40" y="{y}" width="370" height="34" rx="6" fill="none" '
+        f'stroke="#0e9bbd" stroke-width="1.5"/>'
+    )
+    p.append(f'<text x="54" y="{y + 22}" class="lb">candidate</text>')
+    move = '→ refund({"order_id": 42, "amount": 80})'
+    p.append(f'<text x="150" y="{y + 22}" class="m">{move}</text>')
+    graded = [
+        "same tool as the incumbent?  (decision agreement, κ)",
+        "arguments valid against the offered schema?",
+        "a tool call leaked as text?  (server parser fault)",
+        "judge sees both calls, not two empty strings",
+    ]
+    for i, line in enumerate(graded):
+        p.append(f'<text x="54" y="{372 + i * 17}" class="sub">✓ {line}</text>')
+
+    # Right panel: the session, walked until the recording runs out.
+    x0 = 450
+    p.append(f'<text x="{x0}" y="66" {small}>Whole session, from the recording</text>')
+    steps = [
+        ("step 1", "lookup", "same call → recorded result fed back", "#0e9bbd", True),
+        ("step 2", "refund", "same call → recorded result fed back", "#0e9bbd", True),
+        ("step 3", "escalate", "incumbent answered in text; candidate escalated", "#e0405f", False),
+        ("step 4", "—", "not reached: the recording cannot answer that call", "#63758f", None),
+    ]
+    for i, (label, tool, note, colour, ok) in enumerate(steps):
+        y = 84 + i * 62
+        if ok is None:
+            box = f'fill="none" stroke="{colour}" stroke-width="1" stroke-dasharray="5 4"'
+        else:
+            box = 'fill="var(--panel)"'
+        p.append(f'<rect x="{x0}" y="{y}" width="{W - x0 - 40}" height="50" rx="7" {box}/>')
+        p.append(f'<rect x="{x0}" y="{y}" width="5" height="50" rx="2.5" fill="{colour}"/>')
+        mark = {True: "✓", False: "✗ diverged", None: ""}[ok]
+        p.append(f'<text x="{x0 + 18}" y="{y + 21}" {small}>{label} · {tool}  {mark}</text>')
+        p.append(f'<text x="{x0 + 18}" y="{y + 39}" class="sub">{note}</text>')
+    summary = "2 of 3 recorded steps completed · path agreement with interval"
+    p.append(f'<text x="{x0}" y="346" class="sub">{summary}</text>')
+    note = (
+        "A different route to the same outcome reads as diverged. No tool is ever "
+        "executed; the recording is the only source of results."
+    )
+    p.append(f'<text x="40" y="{H - 22}" class="note">{note}</text>')
+    save("agentic-replay.svg", p)
+
+
 def conversation() -> None:
     """A bare `onpar`, replayed — one question at a time.
 
@@ -1974,6 +2059,7 @@ if __name__ == "__main__":
     money_range()
     brief_anatomy()
     agent_surface()
+    agentic_replay()
     conversation()
     resume_ledger()
     print("done")
