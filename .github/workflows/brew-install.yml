@@ -1,0 +1,57 @@
+# Does `brew install dshakes/tap/onpar` actually work? Installed on a clean
+# arm64 macOS runner from the shared tap, then run. Nothing else in this repo
+# proves it: the release job pushes the formula into the tap and verifies the
+# tarball checksum, but a formula can be byte-perfect and still fail to build
+# (a missing resource, a Python pin the runner cannot satisfy, a broken test
+# block). v1.4.0 shipped with that gap: the formula reached the tap for the
+# first time ever and no machine had run it.
+#
+# Three ways in: the release workflow calls it after the tap sync, a weekly
+# run catches drift in Homebrew itself, and "Run workflow" checks any version
+# by hand.
+name: brew install
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version the installed `onpar` must report, e.g. 1.4.0. Blank skips the version assertion."
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: macos-latest   # arm64
+    timeout-minutes: 30
+    steps:
+      - name: Install from the tap
+        run: |
+          set -euo pipefail
+          brew update --quiet
+          brew tap dshakes/tap
+          brew install dshakes/tap/onpar
+      - name: Run it
+        env:
+          EXPECTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          out="$(onpar version)"
+          echo "$out"
+          if [ -n "$EXPECTED" ] && ! echo "$out" | grep -q "onpar ${EXPECTED#v}"; then
+            printf '::error::brew installed onpar, but onpar version does not report %s\n' "${EXPECTED#v}"
+            exit 1
+          fi
+          # The formula's own test block: --json contract, clean error on an unknown model.
+          brew test dshakes/tap/onpar
+          onpar fit --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert {"hardware","feasible","runtime"} <= d.keys(); print("fit --json ok:", d["runtime"])'
