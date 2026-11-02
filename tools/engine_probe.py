@@ -10,7 +10,7 @@ Each probe is a real request. The verdict per probe is one of:
                 a small token budget (a reasoning model served with thinking on
                 spends the budget thinking and returns nothing — found on
                 Qwen3-30B-A3B on mlx_lm.server, 2026-11-02)
-  json          `response_format: json_object` yields valid JSON that is an
+  json          `response_format: json_schema` ({type: object}) yields JSON that is an
                 object; otherwise the engine does not enforce the format and a
                 structured-output cluster will fail for a server reason
   tool-call     a request offering one tool yields a structured `tool_calls`
@@ -115,7 +115,13 @@ def probe_json(endpoint: str, model: str, timeout: float) -> tuple[bool, str]:
         {
             "model": model,
             "messages": [{"role": "user", "content": "Write one sentence about the sea."}],
-            "response_format": {"type": "json_object"},
+            # The schema spelling of "any JSON object": what the collector
+            # sends (prove.collect.JSON_OBJECT_FORMAT), because llama-server
+            # b10210 enforces a json_schema and ignores json_object.
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "json_object", "schema": {"type": "object"}},
+            },
             "max_tokens": 80,
             "temperature": 0,
         },

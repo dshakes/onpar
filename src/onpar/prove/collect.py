@@ -630,6 +630,19 @@ def _load_resume(path: Path) -> dict[str, Collected]:
     return out
 
 
+#: What a captured `json_object` request becomes on the wire. The same
+#: contract — any JSON object — spelled as a schema, because that is the form
+#: engines enforce with a grammar: llama-server b10210 answered a `json_object`
+#: request with prose and a `json_schema` one with an object (probed on an M4
+#: Max, 2026-11-02); vLLM and SGLang route schemas through xgrammar. A server
+#: that honours neither (mlx_lm.server) still gets the warning the collector
+#: already raises. The grader is unchanged: it checks for a JSON object.
+JSON_OBJECT_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {"name": "json_object", "schema": {"type": "object"}},
+}
+
+
 def request_body(
     item: EvalItem,
     *,
@@ -666,7 +679,7 @@ def request_body(
     if isinstance(item.response_format, dict):
         body["response_format"] = item.response_format
     elif item.response_format in ("json_object", "json"):
-        body["response_format"] = {"type": "json_object"}
+        body["response_format"] = JSON_OBJECT_FORMAT
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
     return body

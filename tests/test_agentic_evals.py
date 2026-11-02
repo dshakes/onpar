@@ -68,7 +68,10 @@ def test_the_candidate_is_sent_the_whole_conversation_and_the_tools():
     body = request_body(item(response_format="json_object"), model="m")
     assert body["messages"] == [SYSTEM, USER], "system prompt and turns, as captured"
     assert body["tools"] == [REFUND_TOOL]
-    assert body["response_format"] == {"type": "json_object"}
+    # A captured json_object goes out as the schema form of the same contract:
+    # that is what grammar-constrained engines enforce (see JSON_OBJECT_FORMAT).
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["schema"] == {"type": "object"}
     assert body["stream"] is False and body["temperature"] == 0.0
 
 
