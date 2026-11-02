@@ -2,7 +2,9 @@
 // repo's Markdown by scripts/sync-docs.mjs. The landing page, generated assets and
 // the interactive lab are plain static files copied in by scripts/postbuild.mjs.
 // The build fails on any broken internal link (starlight-links-validator).
+// React renders the interactive diagrams in src/components/diagrams/.
 import { defineConfig } from 'astro/config';
+import react from '@astrojs/react';
 import starlight from '@astrojs/starlight';
 import starlightLinksValidator from 'starlight-links-validator';
 
@@ -11,6 +13,7 @@ export default defineConfig({
 	base: '/onpar',
 	trailingSlash: 'always',
 	integrations: [
+		react(),
 		starlight({
 			title: 'onpar',
 			description: 'Prove which open-weight LLM can replace your closed-model API, on your own traffic, hardware and budget.',

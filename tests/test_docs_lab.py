@@ -655,6 +655,27 @@ def test_every_command_the_docs_tell_you_to_run_exists(page):
     )
 
 
+def test_the_walkthrough_cites_files_that_exist_and_verbs_that_are_registered():
+    """The docs-home walkthrough links every claim to a file and names commands.
+
+    Both rot silently: a moved module leaves a GitHub 404 behind a "source" link,
+    and a renamed verb teaches a command that errors. Every `p: "..."` must be a
+    real path and every `onpar <word>` in the flow definition a registered verb.
+    """
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "site/src/components/diagrams/flows-onpar.ts").read_text()
+
+    paths = set(re.findall(r'\bp: "([^"]+)"', text))
+    assert len(paths) >= 10, f"the walkthrough's sources moved or vanished: {sorted(paths)}"
+    missing = sorted(p for p in paths if not (root / p).exists())
+    assert not missing, f"flows-onpar.ts cites files that do not exist: {missing}"
+
+    verbs = set(re.findall(r"\bonpar ([a-z][a-z0-9-]*)", text))
+    assert {"observe", "distill", "fit", "build", "prove", "migrate", "guard"} <= verbs, verbs
+    unknown = sorted(verbs - _cli_commands())
+    assert not unknown, f"flows-onpar.ts names commands that do not exist: {unknown}"
+
+
 # --- ...and install commands that name something obtainable --------------------
 
 #: Names of OUR OWN distributions that have actually been published, anywhere a

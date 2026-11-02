@@ -30,6 +30,23 @@
 	--sl-color-accent: #127a71;
 	--sl-color-accent-high: #0b4a45;
 	--sl-color-orange: #a8620f;
+	/* The neutrals too: the dark ones above are unlayered, so they beat Starlight's own
+	   (layered) light theme and "light" used to render dark. Landing light :root values. */
+	--sl-color-white: #0d1620; /* --ink */
+	--sl-color-gray-1: #0d1620;
+	--sl-color-gray-2: #42586a; /* --ink2 */
+	--sl-color-gray-3: #42586a;
+	--sl-color-gray-4: #6b8296; /* --ink3 */
+	--sl-color-gray-5: #c9d6de; /* --line2 */
+	--sl-color-gray-6: #f7f9fb; /* --panel2 */
+	--sl-color-gray-7: #f3f6f8; /* --deep */
+	--sl-color-black: #fbfcfd; /* --void */
+	--sl-color-bg-nav: #f3f6f8;
+	--sl-color-bg-sidebar: #f3f6f8;
+	--sl-color-hairline-light: #c9d6de;
+	--sl-color-hairline: #dde5ea; /* --line */
+	--sl-color-red: #c02a41; /* --alarm */
+	--sl-color-blue: #3d5fb8; /* --proof */
 }
 
 /* Diagrams are dark-background SVGs; keep them legible in either theme. */
