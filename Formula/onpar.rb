@@ -28,7 +28,10 @@ class Onpar < Formula
     assert parsed.key?("feasible"), "fit --json must report feasibility"
     assert parsed.key?("runtime"),  "fit --json must recommend a runtime"
 
-    # An unknown model is a clean error, not a traceback.
-    assert_match(/error/, shell_output("#{bin}/onpar fit --explain nope 2>&1", 2))
+    # An unknown model is a clean error, not a traceback. Exit 1, not 2: the
+    # invocation is well-formed and the catalogue simply lacks that id (see the
+    # exit-code convention in CLAUDE.md; tests/test_doctor.py pins it). This
+    # asserted 2 and failed the first `brew test` ever run on the formula.
+    assert_match(/error/, shell_output("#{bin}/onpar fit --explain nope 2>&1", 1))
   end
 end
