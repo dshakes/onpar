@@ -207,6 +207,7 @@ A dash means the capability was not found in that review. Sources: [10 — Lands
 ```bash
 uvx --from onpar onpar fit           # no install, no deps
 pip install onpar                       # or install it
+brew install dshakes/tap/onpar          # macOS, from the shared tap
 npx onpar-cli@1.4.0 fit                        # same build, via npm
 onpar version                              # what you have, and where it came from
 ```

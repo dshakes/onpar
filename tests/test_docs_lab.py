@@ -702,6 +702,11 @@ PUBLISHED_BY_REGISTRY: dict[str, frozenset[str]] = {
     # similar to the existing `unhar`, which is the constraint PyPI used to
     # apply and no longer does. Bare `onpar` is NOT in here and cannot be.
     "npm": frozenset({"onpar-cli"}),
+    # Published to dshakes/homebrew-tap by the v1.4.0 release on 2026-11-02 and
+    # verified by .github/workflows/brew-install.yml: a clean macos-latest (arm64)
+    # runner ran `brew install dshakes/tap/onpar`, `onpar version` printed
+    # `onpar 1.4.0`, and the formula's own test block passed.
+    "brew": frozenset({"dshakes/tap/onpar"}),
 }
 #: Published 2026-08-16 and verified by installing it: `uvx onpar fit` ran.
 #: PyPI accepted the bare name, so the distribution, the console script and
@@ -735,6 +740,8 @@ _INSTALL_VERB = re.compile(
 
 def _registry_of(verb: str) -> str:
     """Which index a verb fetches from. The same name is not valid in both."""
+    if verb.startswith("brew"):
+        return "brew"
     return "npm" if verb.startswith(("npx", "npm")) else "pypi"
 
 

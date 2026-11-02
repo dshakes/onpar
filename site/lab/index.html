@@ -354,6 +354,7 @@ eval result moves production traffic without a human.</pre>
 <span class="u">$ uv tool install onpar</span>                                    <span class="c"># or put onpar on your PATH</span>
 <span class="u">$ pipx install onpar</span>
 <span class="u">$ pip install onpar</span>
+<span class="u">$ brew install dshakes/tap/onpar</span>                            <span class="c"># macOS, from the shared tap</span>
 
 <span class="u">$ uvx --from onpar==1.4.0 onpar fit</span>                     <span class="c"># pin a build that stays put</span>
 <span class="u">$ npx onpar-cli@1.4.0 fit</span>                                         <span class="c"># the same build, via npm</span>
@@ -366,7 +367,7 @@ eval result moves production traffic without a human.</pre>
   <p><b>The distribution is <code>onpar</code>; the command is <code>onpar</code>.</b>
   PyPI accepted the bare name, so <code>pip install onpar</code> and <code>uvx onpar</code> both work. The
   <code>--from</code> is what bridges the two names — it is not optional, and every <code>uvx</code>
-  line in these docs carries one. A Homebrew formula is published in dshakes/homebrew-tap (pinned to the 1.4.0 tarball by checksum); a clean-machine <code>brew install</code> has not been verified, so it is not listed as an install path.</p>
+  line in these docs carries one. On macOS, <code>brew install dshakes/tap/onpar</code> installs from the shared tap; the formula is pinned to the release tarball by checksum, and a clean arm64 runner installs and runs it on every release and weekly.</p>
 </div>
 
 <div class="note">

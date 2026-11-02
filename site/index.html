@@ -974,14 +974,16 @@
     <code>onpar</code>.</b> PyPI accepted the bare name, so <code>pip install onpar</code> and
     <code>uvx onpar</code> both work. npm refused it as too close to an existing package,
     so there the distribution is <code>onpar-cli</code> while the command it installs is
-    still <code>onpar</code>, and <code>npx onpar-cli</code> works. A Homebrew formula is published in dshakes/homebrew-tap, pinned to the 1.4.0 tarball by
-    checksum; a <code>brew install</code> from a clean machine has not been verified yet, so it is not
-    offered as a tab here</p></div>
+    still <code>onpar</code>, and <code>npx onpar-cli</code> works. On macOS, <code>brew install
+    dshakes/tap/onpar</code> installs from the shared tap; the formula is pinned to the release
+    tarball by checksum and a clean arm64 runner installs and runs it on every release and
+    weekly (the brew-install workflow).</p></div>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-t="uvx">uvx</button>
     <button class="tab" role="tab" aria-selected="false" data-t="pip">pip / pipx</button>
     <button class="tab" role="tab" aria-selected="false" data-t="npm">npx</button>
+    <button class="tab" role="tab" aria-selected="false" data-t="brew">brew</button>
     <button class="tab" role="tab" aria-selected="false" data-t="git">git clone</button>
   </div>
   <div id="cmds"></div>
@@ -1022,6 +1024,10 @@ const CMDS = {
           'no Python packaging to name — the shim execs uvx --from onpar underneath'],
          ['npx onpar-cli@1.4.0 fit --context 32k --concurrency 8',
           'pinned: runs onpar==1.4.0 exactly, so the two registries cannot drift apart']],
+  // Back since 1.4.0, and only because a clean arm64 runner installed it from the
+  // tap and ran it (.github/workflows/brew-install.yml, on every release and weekly).
+  brew: [['brew install dshakes/tap/onpar && onpar doctor',
+          'macOS, from the shared tap; the formula is pinned to the release tarball by checksum']],
   git:  [['git clone https://github.com/dshakes/onpar && cd onpar', ''],
          ['PYTHONPATH=src python3 -m onpar.cli fit', 'zero runtime dependencies — stdlib only']],
 };
