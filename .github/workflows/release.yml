@@ -582,19 +582,21 @@ jobs:
           # that silently did nothing cannot report success, which is the defect
           # shape this repo keeps finding. But a verification that cries wolf on
           # every green release is worse than none, because it teaches everyone
-          # to ignore the one time it means something. Six tries over ~60s is
-          # far longer than propagation takes and still bounded.
+          # to ignore the one time it means something. Six tries over ~60s was
+          # NOT longer than propagation takes: v1.4.0 was served within minutes
+          # and this step still went red at 60s, the fifth release in a row.
+          # Thirty tries over ten minutes, bounded by the job timeout above.
           served=""
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in $(seq 1 30); do
             if npm view "onpar-cli@${VERSION#v}" version >/dev/null 2>&1; then
               served="yes"
               break
             fi
-            printf 'npm has not served onpar-cli@%s yet (attempt %s) — waiting\n' "${VERSION#v}" "$attempt"
-            sleep 10
+            printf 'npm has not served onpar-cli@%s yet (attempt %s of 30) — waiting 20s\n' "${VERSION#v}" "$attempt"
+            sleep 20
           done
           if [ -z "$served" ]; then
-            printf '::error::npm does not serve onpar-cli@%s 60s after publishing\n' "${VERSION#v}"
+            printf '::error::npm does not serve onpar-cli@%s ten minutes after publishing\n' "${VERSION#v}"
             exit 1
           fi
 
@@ -748,3 +750,12 @@ jobs:
           git commit -qm "onpar $VERSION"
           git push
           echo "synced onpar $VERSION into dshakes/homebrew-tap"
+
+  # The formula is in the tap; now prove a clean arm64 Mac can install and run
+  # it. Separate workflow (brew-install.yml) so the same check runs weekly and
+  # on demand. Not in the `release` concurrency group: it writes nothing.
+  verify-brew:
+    needs: [build, homebrew]
+    uses: ./.github/workflows/brew-install.yml
+    with:
+      version: ${{ needs.build.outputs.version }}
