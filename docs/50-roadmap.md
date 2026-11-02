@@ -61,7 +61,7 @@ Sequenced so each phase ships something **independently useful** — no phase is
 
 - Three-tier grader stack
 - Position-swapped pairwise judging with disclosed agreement rates, measured through blind human labelling (`onpar label`) and with judge length bias disclosed beside position bias
-- Wilson intervals, `?` when the evidence is thin, receipt format v3 (signed, local, re-verifiable)
+- Wilson intervals, `?` when the evidence is thin, receipt format v3 (content-addressed, local, re-verifiable)
 - Agentic steps replayed with everything the incumbent saw; whole sessions replayed from the recording; decision agreement chance-corrected ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)) — *shipped 2026-10-31*
 - Equivalence matrix view with full drill-down
 - Regret clustering + hybrid policy recommendation

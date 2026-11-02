@@ -1,0 +1,37 @@
+/* The diagram kit's --lx-* tokens (components/diagrams/interactive.css), mapped onto
+   onpar's palette so the walkthrough reads as part of the site in both themes.
+
+   The onpar names are copies of the landing page's :root (site/index.html, dark, and
+   its :root[data-theme="light"] block). Keep them in sync. They are scoped to .ix so
+   they cannot leak into Starlight's own theme (styles/onpar.css).
+
+   Roles: gateway and solver boxes = --proof (the kit's "rt" tone), proven = --candidate
+   (the kit's "ok" tone), refused = --alarm, the incumbent = --incumbent. */
+.ix {
+	--void: #050a0f; --deep: #08111a; --panel: #0b1620; --panel2: #0f1e2b;
+	--ink: #e9f4f8; --ink2: #93aab8; --ink3: #5b7385;
+	--line: #152633; --line2: #1e3546;
+	--incumbent: #f0a340; --candidate: #2fd4c4; --proof: #8fb3ff; --alarm: #ff6b81;
+}
+:root[data-theme='light'] .ix {
+	--void: #fbfcfd; --deep: #f3f6f8; --panel: #ffffff; --panel2: #f7f9fb;
+	--ink: #0d1620; --ink2: #42586a; --ink3: #6b8296;
+	--line: #dde5ea; --line2: #c9d6de;
+	--incumbent: #b45309; --candidate: #0d7d72; --proof: #3d5fb8; --alarm: #c02a41;
+}
+
+/* Every --lx-* token interactive.css reads. Derived, so both themes follow from the block above. */
+.ix {
+	--lx-ink: var(--ink); --lx-ink-2: var(--ink2); --lx-ink-3: var(--ink3);
+	--lx-bg: var(--deep); --lx-surface: var(--panel); --lx-surface-2: var(--panel2);
+	--lx-line: var(--line2);
+	--lx-flame: var(--incumbent); --lx-flame-soft: color-mix(in srgb, var(--incumbent) 14%, transparent);
+	--lx-glass: var(--candidate); --lx-glass-soft: color-mix(in srgb, var(--candidate) 13%, transparent);
+	--lx-patina: var(--candidate); --lx-patina-soft: color-mix(in srgb, var(--candidate) 14%, transparent);
+	--lx-signal: var(--alarm); --lx-signal-soft: color-mix(in srgb, var(--alarm) 14%, transparent);
+	--lx-violet: var(--proof); --lx-violet-soft: color-mix(in srgb, var(--proof) 14%, transparent);
+	--lx-pink: var(--incumbent); --lx-pink-soft: color-mix(in srgb, var(--incumbent) 14%, transparent);
+	--lx-font-text: var(--sl-font); --lx-font-display: var(--sl-font); --lx-font-mono: var(--sl-font-mono);
+	--lx-radius-s: 10px; --lx-radius-m: 16px; --lx-radius-l: 22px;
+	--lx-dur-ui: 180ms; --lx-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}

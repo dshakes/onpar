@@ -102,7 +102,7 @@ Agent traffic changes what a migration proof must check. Each point maps to some
 Features none of them ship, and onpar does:
 
 1. A serve command that carries the tool-calling config (parser, strict level, chat template per family) next to the memory fit. The planner sets it as one of twelve knobs.
-2. A statistical verdict with a confidence interval and a signed, local-only receipt.
+2. A statistical verdict with a confidence interval and a content-addressed, local-only receipt.
 3. Teacher-forced step replay and whole-session replay from the recording. A miss stops the run. It never makes a live tool call. See [ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md).
 4. Capture of Responses and Messages traffic, including tool_use and tool_result blocks, in one record.
 5. A per-span judge disclosed with a human-agreement rate measured through `onpar label`.

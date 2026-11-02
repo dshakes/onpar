@@ -45,7 +45,7 @@ Seven stages, one loop: observe, distill, fit, prove, deploy, cut over, guard.
 - **Move it.** `onpar migrate` runs shadow, canary and rollback. Nothing authorises a cutover except shadow mode.
 - **Learn it.** `onpar learn` teaches 15 lessons from first principles, using the host's own numbers. `onpar doctor` says what is installed and what to run next.
 
-The output is a signed, local receipt (format v3) that re-verifies. Example from the README: $2,847 a month on an incumbent, 400 captures over 14 days, and a saving of $2,506–$2,530 a month (about 89%) on traffic proven at or above the 90% bar.
+The output is a content-addressed, local receipt (format v3) that re-verifies. Example from the README: $2,847 a month on an incumbent, 400 captures over 14 days, and a saving of $2,506–$2,530 a month (about 89%) on traffic proven at or above the 90% bar.
 
 Deployment is an output, not the product.
 
@@ -84,7 +84,7 @@ Code is composable. Trust is not. onpar's moat is a set of promises that are enf
 6. Captured traffic is data, never instructions.
 7. Nothing authorises a cutover except shadow mode.
 
-**Receipts.** Each proof produces a signed, local receipt that names the judge, the intervals, the human-agreement rate and what is *not* proven. `onpar receipt` re-verifies it. `onpar guard` says whether it still holds. A customer's eval set and receipt history compound per customer and are worth nothing to a competitor.
+**Receipts.** Each proof produces a content-addressed, local receipt that names the judge, the intervals, the human-agreement rate and what is *not* proven. `onpar receipt` re-verifies it. `onpar guard` says whether it still holds. A customer's eval set and receipt history compound per customer and are worth nothing to a competitor.
 
 Why incumbents will not follow: Kitaru (316 stars, Apache-2.0) replays sessions but sizes no hardware, emits no serving config and signs no receipt. Langfuse (36.8k) runs experiments on traces but has no capture proxy, no statistical verdict and no hardware model. Braintrust is closed and bills per score. Gateways (LiteLLM, Portkey, Kong, Bifrost) assume the model is already chosen.
 
@@ -128,7 +128,7 @@ Pricing anchors to spend migrated, not seats. The north-star metric is dollars o
 
 ## Status
 
-**Beta, built in the open.** Version 1.3.4. 2530 tests (2233 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
+**Beta, built in the open.** Version 1.3.4. 2531 tests (2234 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
 
 **Biggest open risk, stated plainly:** `observe` has not yet been run against real production traffic. The invariants are tested. The live run is the next proof, and it needs a real upstream and a willing team.
 
@@ -136,4 +136,4 @@ Pricing anchors to spend migrated, not seats. The north-star metric is dollars o
 
 ## The 30-second version
 
-> Open models are good enough for some of your workload. Nobody switches because nobody can prove which part. onpar captures your real traffic, replays it step by step against open candidates, and returns a signed receipt with intervals, a disclosed judge and a stated bar. It sizes the hardware, writes native serving config for seven engines, and moves traffic across behind shadow mode with a rollback button. Try it with one command: `uvx --from onpar onpar fit`.
+> Open models are good enough for some of your workload. Nobody switches because nobody can prove which part. onpar captures your real traffic, replays it step by step against open candidates, and returns a content-addressed receipt with intervals, a disclosed judge and a stated bar. It sizes the hardware, writes native serving config for seven engines, and moves traffic across behind shadow mode with a rollback button. Try it with one command: `uvx --from onpar onpar fit`.

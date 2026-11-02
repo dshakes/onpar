@@ -187,7 +187,7 @@ prefix-reuse decision.
 
 ```
 capture (3 API shapes) → redact → encrypt → distill (or distill --import) → eval set
-  → prove: step replay · session replay · judge → Wilson interval · κ · receipt (v3, signed, local)
+  → prove: step replay · session replay · judge → Wilson interval · κ · receipt (v3, content-addressed, local)
   → onpar label (blind human grades the judge) → measured agreement on the receipt
   → onpar migrate: shadow → canary → rollback
 ```

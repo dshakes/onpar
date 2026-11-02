@@ -7,7 +7,7 @@
 **onpar proves which open-weight model can replace your closed-model API, on your own traffic and hardware, then moves you across with a quality gate and a rollback.**
 
 [![status](https://img.shields.io/badge/status-beta-22d3ee?style=flat-square)](docs/50-roadmap.md)
-[![tests](https://img.shields.io/badge/tests-2530-34d399?style=flat-square)](#verification)
+[![tests](https://img.shields.io/badge/tests-2531-34d399?style=flat-square)](#verification)
 [![license](https://img.shields.io/badge/license-Apache--2.0-a78bfa?style=flat-square)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-read-fbbf24?style=flat-square)](https://dshakes.github.io/onpar/docs/)
 
@@ -194,7 +194,7 @@ Every layer has a good incumbent. The gap is the seam between them. As of 31 Oct
 | Braintrust | hosted traces | trace to experiment | — | — | — | — |
 | promptfoo | — | output-level | — | — | — | — |
 | LiteLLM | proxy | — | — | — | — | — |
-| **onpar** | **redacting proxy** | **teacher-forced steps and sessions** | **Wilson, `?`, signed receipt** | **MoE, GQA, MLA** | **seven engines** | **shadow mode only** |
+| **onpar** | **redacting proxy** | **teacher-forced steps and sessions** | **Wilson, `?`, content-addressed receipt** | **MoE, GQA, MLA** | **seven engines** | **shadow mode only** |
 
 A dash means the capability was not found in that review. Sources: [10 — Landscape](docs/10-landscape.md).
 
@@ -230,10 +230,10 @@ uvx --from onpar==1.3.4 onpar fit   # exactly this build
 ```bash
 cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2233 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2234 Python
 ```
 
-**2530 tests.** 2233 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. The fit transcript, the saving line, the install pins and the test counts on this page are checked by tests; the market figures are dated and sourced. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
+**2531 tests.** 2234 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. The fit transcript, the saving line, the install pins and the test counts on this page are checked by tests; the market figures are dated and sourced. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
 
 ## What's in the repo
 
