@@ -1,0 +1,90 @@
+# Serve a real small model with a real engine and probe the three behaviours a
+# proof depends on: the model answers (thinking does not eat the budget), a
+# requested JSON format is enforced or reported as not enforced, and a tool
+# call comes back as a call. Unit tests with stub servers cannot see any of
+# these; two of them reached a real run on 2026-11-02 before anyone did.
+#
+# Two engines on the same macOS runner: MLX (what `onpar run` picks on Apple
+# silicon) and llama.cpp. Each job states which probes must pass on that
+# engine; the others print as warnings so a change in engine behaviour is
+# visible in the log rather than silently absorbed.
+name: engine probe
+
+on:
+  pull_request:
+    paths:
+      - "src/onpar/engines.py"
+      - "src/onpar/plan.py"
+      - "src/onpar/run.py"
+      - "src/onpar/prove/**"
+      - "tools/engine_probe.py"
+      - ".github/workflows/engine-probe.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/onpar/engines.py"
+      - "src/onpar/plan.py"
+      - "src/onpar/prove/**"
+      - "tools/engine_probe.py"
+      - ".github/workflows/engine-probe.yml"
+  schedule:
+    - cron: "41 6 * * 1"   # Mondays 06:41 UTC: engines move under us
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  mlx:
+    name: mlx_lm.server · Qwen3-0.6B-4bit
+    runs-on: macos-latest   # arm64, Metal
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the engine
+        run: uv tool install mlx-lm
+      - name: Serve with thinking off (what onpar run emits for a reasoning model)
+        run: |
+          set -euo pipefail
+          nohup mlx_lm.server --model mlx-community/Qwen3-0.6B-4bit --host 127.0.0.1 --port 8000 \
+            --chat-template-args '{"enable_thinking":false}' > mlx.log 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8000/v1/models >/dev/null && break
+            sleep 5
+          done
+          curl -sf http://127.0.0.1:8000/v1/models >/dev/null || { cat mlx.log; exit 1; }
+      - name: Probe
+        # MLX has no constrained decoding: json is expected to report "not enforced",
+        # and the planner lists structured_output under NOT EXPRESSED for it.
+        run: |
+          set -euo pipefail
+          python3 tools/engine_probe.py --endpoint http://127.0.0.1:8000/v1 \
+            --model mlx-community/Qwen3-0.6B-4bit --expect answers,tool-call | tee probe.txt
+          grep -q "json .*not enforced" probe.txt
+      - if: failure()
+        run: tail -50 mlx.log
+
+  llama-cpp:
+    name: llama-server · Qwen3-0.6B Q4_K_M
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the engine
+        run: brew install llama.cpp
+      - name: Serve with the jinja template (tool calls) and no reasoning budget
+        run: |
+          set -euo pipefail
+          nohup llama-server -hf unsloth/Qwen3-0.6B-GGUF:Q4_K_M --jinja --reasoning-budget 0 \
+            --host 127.0.0.1 --port 8080 > llama.log 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8080/v1/models >/dev/null && break
+            sleep 5
+          done
+          curl -sf http://127.0.0.1:8080/v1/models >/dev/null || { cat llama.log; exit 1; }
+      - name: Probe
+        # llama.cpp constrains json_object with a grammar, so all three must pass.
+        run: python3 tools/engine_probe.py --endpoint http://127.0.0.1:8080/v1 --expect answers,json,tool-call
+      - if: failure()
+        run: tail -50 llama.log

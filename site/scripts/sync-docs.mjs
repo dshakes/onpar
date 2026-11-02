@@ -8,7 +8,7 @@
 // Every relative link is resolved against the source file's directory and then
 // mapped by where it lands in the repo. Anything unmappable fails the sync.
 // No dependencies: runs on plain Node.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +35,8 @@ function rewrite(target, from) {
 	}
 	const suffix = hash === undefined ? '' : `#${anchor(abs, hash, from)}`;
 	let m;
+	if ((m = abs.match(/^docs\/guide\/([a-z-]+)\/(?:\d\d-)?([^/]+)\.md$/)))
+		return `${BASE}/docs/${m[1]}/${m[2]}/${suffix}`;
 	if ((m = abs.match(/^docs\/(\d\d-[^/]+)\.md$/))) return `${BASE}/docs/${m[1]}/${suffix}`;
 	if ((m = abs.match(/^docs\/adr\/([^/]+)\.md$/))) return `${BASE}/docs/adr/${m[1]}/${suffix}`;
 	if ((m = abs.match(/^docs\/assets\/([^/]+)$/))) {
@@ -125,16 +127,32 @@ function describe(body) {
 	return '';
 }
 
-function convert(srcRel) {
+// `<!-- run: name -->` on its own line embeds docs/guide/_runs/<name>.txt, which
+// tools/story_run.sh records from a real run. A missing recording fails the sync:
+// a page may not ship a transcript that was typed.
+function includeRuns(body, from) {
+	return body.replace(/^<!-- run: ([\w-]+) -->$/gm, (_, name) => {
+		const file = join(REPO, 'docs/guide/_runs', `${name}.txt`);
+		if (!existsSync(file)) {
+			errors.push(`${from}: no recording docs/guide/_runs/${name}.txt — run tools/story_run.sh`);
+			return '';
+		}
+		const text = readFileSync(file, 'utf8').replace(/\s+$/, '');
+		return '```text\n' + text.replace(/```/g, "'''") + '\n```';
+	});
+}
+
+function convert(srcRel, { order } = {}) {
 	const text = readFileSync(join(REPO, srcRel), 'utf8').replace(/\r\n/g, '\n');
 	const m = text.match(/^# (.+)\n/m);
 	if (!m) {
 		errors.push(`${srcRel}: no "# " title heading`);
 		return '';
 	}
-	const body = text.slice(0, m.index) + text.slice(m.index + m[0].length);
+	const body = includeRuns(text.slice(0, m.index) + text.slice(m.index + m[0].length), srcRel);
 	// JSON strings are valid YAML scalars, so this quoting is always safe.
-	const fm = `---\ntitle: ${JSON.stringify(cleanTitle(m[1]))}\ndescription: ${JSON.stringify(describe(body))}\neditUrl: ${JSON.stringify(`${GITHUB}/edit/main/${srcRel}`)}\n---\n`;
+	const side = order === undefined ? '' : `sidebar:\n  order: ${order}\n`;
+	const fm = `---\ntitle: ${JSON.stringify(cleanTitle(m[1]))}\ndescription: ${JSON.stringify(describe(body))}\n${side}editUrl: ${JSON.stringify(`${GITHUB}/edit/main/${srcRel}`)}\n---\n`;
 	return fm + rewriteBody(body, srcRel);
 }
 
@@ -148,10 +166,28 @@ function list(dir, re) {
 const docs = list('docs', /^\d\d-.+\.md$/);
 const adrs = list('docs/adr', /^.+\.md$/);
 
+// The reader's docs: docs/guide/<section>/<NN-name>.md. NN orders the sidebar and
+// is dropped from the URL. Sections become sidebar groups (astro.config.mjs).
+const GUIDE = 'docs/guide';
+const sections = existsSync(join(REPO, GUIDE))
+	? readdirSync(join(REPO, GUIDE)).filter((d) => !d.startsWith('_') && statSync(join(REPO, GUIDE, d)).isDirectory()).sort()
+	: [];
+const guidePages = sections.flatMap((sec) =>
+	list(`${GUIDE}/${sec}`, /\.md$/).map((f) => {
+		const base = posix.basename(f, '.md');
+		const mm = base.match(/^(\d\d)-(.+)$/);
+		return { file: f, section: sec, slug: mm ? mm[2] : base, order: mm ? Number(mm[1]) : 100 };
+	}),
+);
+
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, 'adr'), { recursive: true });
 for (const f of docs) writeFileSync(join(OUT, posix.basename(f)), convert(f));
 for (const f of adrs) writeFileSync(join(OUT, 'adr', posix.basename(f)), convert(f));
+for (const pg of guidePages) {
+	mkdirSync(join(OUT, pg.section), { recursive: true });
+	writeFileSync(join(OUT, pg.section, `${pg.slug}.md`), convert(pg.file, { order: pg.order }));
+}
 
 // /onpar/docs/ itself: a splash page built from the docs' own titles and first
 // paragraphs, so it cannot drift from them. Starlight components, hence .mdx.
@@ -164,7 +200,28 @@ const descOf = (f) => plain(describe(readFileSync(join(REPO, f), 'utf8').replace
 const urlOf = (f) => rewrite(posix.basename(f), f);
 const card = (f, title = titleOf(f)) =>
 	`  <LinkCard title=${attr(title)} description=${attr(descOf(f))} href=${attr(urlOf(f))} />`;
-const grid = (heading, files) => ['', `## ${heading}`, '', '<CardGrid>', ...files.map((f) => card(f)), '</CardGrid>'];
+const grid = (heading, files, extra = []) => ['', `## ${heading}`, '', '<CardGrid>', ...files.map((f) => card(f)), ...extra, '</CardGrid>'];
+// The splash follows the reader's path: one grid per guide section, in the sidebar's
+// order and labels (astro.config.mjs GUIDE_LABELS), pages in NN order.
+const GUIDE_LABELS = [
+	['start', 'Start here'],
+	['loop', 'The loop'],
+	['agents', 'For agents'],
+	['learn', 'Learn'],
+	['reference', 'Reference'],
+];
+const guideIn = (sec) =>
+	guidePages
+		.filter((p) => p.section === sec)
+		.sort((a, b) => a.order - b.order || a.file.localeCompare(b.file))
+		.map((p) => p.file);
+const labCard = `  <LinkCard title="The interactive lab" description="A memory lab that sizes weights, KV cache and overhead as you move the sliders, and the written curriculum with diagrams." href=${JSON.stringify(`${BASE}/lab/`)} />`;
+const guideGrids = GUIDE_LABELS.flatMap(([sec, label]) => {
+	const files = guideIn(sec);
+	return files.length ? grid(label, files, sec === 'learn' ? [labCard] : []) : [];
+});
+// The specs that built the product: titles only, so history stays small and last.
+const projectCard = (f) => `  <LinkCard title=${attr(titleOf(f))} href=${attr(urlOf(f))} />`;
 const byNum = (...nums) => nums.map((n) => docs.find((f) => posix.basename(f).startsWith(n)) ?? `docs/${n}`);
 const latestAdr = adrs[adrs.length - 1];
 writeFileSync(
@@ -172,7 +229,7 @@ writeFileSync(
 	[
 		'---',
 		'title: onpar docs',
-		'description: "The written docs for onpar: the field guide, product specs, operating docs and every architecture decision record."',
+		'description: "The onpar guide: a first fit and a first proof, the seven-stage loop, what agents may call, the curriculum and reference, then every decision record and the project specs."',
 		'template: splash',
 		'editUrl: false',
 		'hero:',
@@ -199,9 +256,7 @@ writeFileSync(
 		'Press play, or pick a scenario, to follow your traffic from capture to a receipt and see where the loop says no.',
 		'',
 		'<LoopWalkthrough client:visible />',
-		...grid('Start here', byNum('05', '00', '60')),
-		...grid('Product', byNum('10', '20', '30', '40', '50')),
-		...grid('Operating', byNum('80', '90', '95', '70')),
+		...guideGrids,
 		'',
 		'## Decisions',
 		'',
@@ -210,11 +265,12 @@ writeFileSync(
 		`  <LinkCard title=${JSON.stringify(`All ${adrs.length} architecture decision records`)} description="Every load-bearing choice, including the two later reversed. Each one records the context, the options and why." href=${JSON.stringify(urlOf(adrs[0]))} />`,
 		'</CardGrid>',
 		'',
-		'## Learn on your own numbers',
+		'## Project',
+		'',
+		'The specs that built the product: history and intent, kept out of the reader’s path.',
 		'',
 		'<CardGrid>',
-		`  <LinkCard title="The interactive lab" description="A memory lab that sizes weights, KV cache and overhead as you move the sliders, the written curriculum with diagrams, and the solver-checked CLI reference." href=${JSON.stringify(`${BASE}/lab/`)} />`,
-		`  <LinkCard title="onpar learn basics" description="Fifteen lessons in the terminal, basics then intermediate, where every figure is computed by the solver for the machine you are sitting at." href=${JSON.stringify(`${BASE}/lab/#edu-why`)} />`,
+		...docs.map(projectCard),
 		'</CardGrid>',
 		'',
 	].join('\n'),
@@ -224,4 +280,4 @@ if (errors.length) {
 	console.error(`sync-docs: ${errors.length} unmappable link(s):\n  ${errors.join('\n  ')}`);
 	process.exit(1);
 }
-console.log(`sync-docs: ${docs.length} docs + ${adrs.length} ADRs -> ${relative(SITE, OUT)}`);
+console.log(`sync-docs: ${guidePages.length} guide pages + ${docs.length} project docs + ${adrs.length} ADRs -> ${relative(SITE, OUT)}`);

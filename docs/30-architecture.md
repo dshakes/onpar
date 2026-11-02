@@ -92,11 +92,11 @@ Three rules:
 
 ---
 
-## The planner: twelve knobs, each with a reason
+## The planner: thirteen knobs, each with a reason
 
-`onpar build` and `onpar run` turn what you need into flags. The planner sets twelve settings per engine: context length, max concurrent, chunked prefill, prefix reuse, speculative decoding, memory fraction, tensor parallel, structured output, quantisation, KV-cache dtype, LoRA fleet and tool-calling parser. Every knob carries a `why`. Three forks decide most of it.
+`onpar build` and `onpar run` turn what you need into flags. The planner sets thirteen settings per engine: context length, max concurrent, chunked prefill, prefix reuse, speculative decoding, memory fraction, tensor parallel, structured output, quantisation, KV-cache dtype, LoRA fleet and tool-calling parser. Every knob carries a `why`. Three forks decide most of it.
 
-<img src="assets/autotune.svg" alt="The twelve knobs the planner sets per engine, with the three forks: prefix sharing picks the engine, concurrency decides speculative decoding, latency budget decides chunked prefill." width="100%">
+<img src="assets/autotune.svg" alt="The thirteen knobs the planner sets per engine, with the three forks: prefix sharing picks the engine, concurrency decides speculative decoding, latency budget decides chunked prefill." width="100%">
 
 1. **Prefix sharing picks the engine.** Shared long prefixes favour SGLang's radix reuse. Otherwise vLLM's PagedAttention is the better-supported default.
 2. **Concurrency decides speculative decoding.** Drafting is disabled past the batch cliff, where the verify step competes with real tokens.
@@ -138,7 +138,7 @@ feasible       ⟺ required ≤ usable_memory
 Notes that matter:
 - **MoE** (Kimi K3: 2.8T total, ~16 of 896 experts active): weights need *total* params resident, compute scales with *active*. Getting this wrong is the most common sizing error in the wild.
 - **GQA**: `kv_heads` ≪ `attn_heads`. Using attention heads overestimates KV by up to 8×.
-- **MLA** (DeepSeek family): the cache stores a compressed `kv_lora_rank` latent. The GQA formula overestimates KV by about 50×. A catalog entry with `kv_scheme: mla` must set `kv_lora_rank`, and a test enforces it.
+- **MLA** (DeepSeek family): the cache stores a compressed `kv_lora_rank` latent. The GQA formula overestimates KV by about 64×. A catalog entry with `kv_scheme: mla` must set `kv_lora_rank`, and a test enforces it.
 - **Quantisation** levels are fp16, bf16, fp8, q8, q6, q5, q4 and q3. Bits per weight are effective figures (q4 is 4.5).
 - **Apple unified memory** is shared with the OS and GPU. Usable ≈ 75% of total, and `iogpu.wired_limit_mb` can raise it — surface that as a tunable, don't silently assume.
 - Solve at **observed** context lengths from stage ②, not the model's advertised max. Nobody actually sends 1M tokens.
@@ -218,6 +218,6 @@ A whole-session replay answers tool calls from the recording. A call the recordi
 | **MCP server** (`onpar-mcp`) | Claude Code / Cursor analyse and recommend. Eleven read-only tools; none can move production traffic | P1 |
 | **Conversation** (bare `onpar`) | one question at a time, only when it changes the plan. A usage error (exit 2) in CI | P0 |
 
-Onboarding and teaching sit beside these: `onpar doctor` reports the gateway, extension and engine and prints the next command, and `onpar learn` walks 15 lessons on the host's own numbers.
+Onboarding and teaching sit beside these: `onpar doctor` reports the gateway, extension and engine and prints the next command, and `onpar learn` walks 36 lessons in five tracks on the host's own numbers.
 
 Detail in [`40-ux.md`](40-ux.md).

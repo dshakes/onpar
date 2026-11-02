@@ -41,6 +41,9 @@ class ModelSpec:
     kv_lora_rank: int | None = None
     #: Hugging Face repo. `None` when unknown — never guessed.
     repo: str | None = None
+    #: The published chat template opens a reasoning phase unless told not to
+    #: (Qwen3's `enable_thinking`). Set only after reading the template.
+    reasoning: bool = False
 
     @property
     def is_moe(self) -> bool:
@@ -55,7 +58,7 @@ class ModelSpec:
 
         MLA (DeepSeek-family) compresses K and V into one low-rank latent, so it
         stores kv_lora_rank per layer instead of 2 x kv_heads x head_dim. Using the
-        GQA formula on an MLA model overestimates KV by ~50x.
+        GQA formula on an MLA model overestimates KV by ~64x.
         """
         if self.kv_scheme == "mla" and self.kv_lora_rank:
             per_layer = self.kv_lora_rank
@@ -159,6 +162,7 @@ _TYPES: dict[str, tuple[tuple[type, ...], bool]] = {
     "verified": ((bool,), False),
     "kv_lora_rank": ((int,), True),
     "repo": ((str,), False),
+    "reasoning": ((bool,), False),
 }
 
 
@@ -223,7 +227,7 @@ def _check_invariants(spec: ModelSpec, path: Path) -> None:
     documents as the first-class way to add a model.
 
     An MLA entry with no rank is sized with the GQA formula and overestimates KV
-    by ~50x. That is a wrong number, not a crash, so it surfaces as a model that
+    by ~64x. That is a wrong number, not a crash, so it surfaces as a model that
     "does not fit" on hardware that would hold it — or worse, the reverse.
 
     Enforced here because `load()` is the funnel every catalogue passes through,
@@ -240,7 +244,7 @@ def _check_invariants(spec: ModelSpec, path: Path) -> None:
         raise ValueError(
             f"{path}: model {spec.id!r} declares kv_scheme 'mla' but no "
             f"kv_lora_rank. MLA stores a compressed latent; sizing it with the "
-            f"GQA formula overestimates KV by ~50x, so it is refused rather "
+            f"GQA formula overestimates KV by ~64x, so it is refused rather "
             f"than guessed."
         )
     if unknown := set(spec.quants) - _KNOWN_QUANTS:

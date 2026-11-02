@@ -359,13 +359,13 @@ class SuiteResult:
     receipt: Receipt
     policy: HybridPolicy
 
-    def render(self) -> str:
+    def render(self, width: int | None = None) -> str:
         """The kiosk view — regret first, then the matrix, then the proposal.
 
         Deliberately one string: the report is the product, and a caller that
         has to assemble it from parts will assemble it differently each time.
         """
-        return f"{self.matrix.render()}\n\n{self.policy.render()}"
+        return f"{self.matrix.render(width)}\n\n{self.policy.render()}"
 
 
 def suite(

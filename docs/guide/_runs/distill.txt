@@ -1,0 +1,27 @@
+$ onpar distill --out evalset.json
+
+
+  197 captures  →  7 task shapes  →  197 eval items
+
+  1 capture(s) were upstream errors (empty reply, no usage) and are not in the eval set — an error is not the incumbent's answer
+
+  12 agent sessions · 36 steps (18% of captures) · avg 3.0 steps, longest 3
+  24 steps called a tool
+  ~56% of prompt tokens were a re-sent prefix — a prefix cache would skip at least that (estimate from reported prompt sizes, lower bound)
+  plan for it: onpar build --prefix-sharing 0.56 --tool-calling --structured-output (turns on prefix reuse — vLLM --enable-prefix-caching, SGLang's radix cache — and sizes KV for it; --tool-calling emits the engine's tool-call parser for the model, so calls come back as calls rather than text; --structured-output asks the engine to enforce response_format, and the plan lists it under NOT EXPRESSED where the engine cannot; onpar advise --seen-prefix-sharing 0.56 checks a running plan against it)
+
+  free text · <=1k context #1               40 sampled   20.3% of traffic
+  free text · <=1k context #2               40 sampled   20.3% of traffic
+  free text · <=1k context #3               40 sampled   20.3% of traffic
+  structured JSON · <=1k context            40 sampled   20.3% of traffic
+  tool-calling (2 tools) · empty response · <=1k context  24 sampled   12.2% of traffic
+  tools offered, unused · free text · <=1k context  12 sampled    6.1% of traffic
+  free text · <=1k context #4                1 sampled    0.5% of traffic
+
+  wrote evalset.json
+  next: onpar prove evalset.json --candidate-endpoint <url> --candidate <model>
+        (the endpoint is required — without it every candidate answer in this file is blank)
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

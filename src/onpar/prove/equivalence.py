@@ -499,8 +499,13 @@ class Matrix:
             traffic_window=self.traffic_window,
         )
 
-    def render(self) -> str:
-        """Text form. Regret first, then the table, then provenance."""
+    def render(self, width: int | None = None) -> str:
+        """Text form. Regret first, then the table, then provenance.
+
+        ``width`` is a TTY's column count, passed only when stdout is styled.
+        A table wider than it is turned cluster-per-row; ``None`` (every pipe,
+        file and golden) keeps the column-per-cluster layout byte for byte.
+        """
         if not self.candidates:
             return "No candidates evaluated."
 
@@ -530,6 +535,7 @@ class Matrix:
         # different one attributes a real measurement to the wrong model.
         disclosed = (best or self.candidates[0]).clusters
         head = f"{'':<22}" + "".join(f"{c.name[:16]:>18}" for c in header_clusters)
+        table_at = len(out)
         out.append(head)
         out.append(
             f"{'':<22}" + "".join(f"{f'({c.share * 100:.0f}%)':>18}" for c in header_clusters)
@@ -539,33 +545,15 @@ class Matrix:
             row = f"{cand.model[:20]:<22}"
             for c in cand.clusters:
                 row += f"{c.render_cell():>18}"
-            # WITH its interval. This printed `weighted_score()` bare — the
-            # headline of the whole report, on every render, for every
-            # candidate. `weighted_interval` was already written and already
-            # documented as "exactly the kind of number this repo refuses to
-            # print bare"; it simply was not called. Invariant 6.
-            ws = cand.weighted_score()
-            if ws is None:
-                row += "   ? weighted"
-            else:
-                iv = cand.weighted_interval()
-                row += f"   {ws * 100:.0f}% [{iv.low * 100:.0f}–{iv.high * 100:.0f}] weighted"
-                # Both the score and the interval renormalise over the traffic
-                # that was actually measured, which is the only arithmetic
-                # available — an unmeasured cluster has no rate to contribute.
-                # Renormalising silently is what makes it a lie: 70% covered and
-                # all passing printed a flat "100% weighted" while 30% of traffic
-                # had never been looked at. The denominator travels with the
-                # number, like the method does.
-                measured = cand.measured_share()
-                if measured < 0.999:
-                    row += f" of {measured * 100:.0f}%"
+            row += f"   {self._weighted(cand)}"
             out.append(row)
         out.append("-" * len(head))
         out.append(
             f"{self.incumbent + ' (incumbent)':<22}"
             + "".join(f"{'100%':>18}" for _ in header_clusters)
         )
+        if width is not None and max(len(ln) for ln in out[table_at:]) > width:
+            out[table_at:] = self._render_rows(header_clusters)
 
         out += self._render_statistics(best)
 
@@ -615,6 +603,51 @@ class Matrix:
                 f"counted. An item passes only if every copy of it passed."
             )
         return "\n".join(out)
+
+    def _render_rows(self, header_clusters: list[ClusterScore]) -> list[str]:
+        """The matrix transposed, cluster per row, for a terminal narrower than
+        the column-per-cluster table. Same cells, same headline."""
+        from ..term import out as term
+
+        header = ["", "share", *(c.model[:20] for c in self.candidates)]
+        header.append(f"{self.incumbent} (incumbent)")
+        rows = [
+            [
+                hc.name,
+                f"({hc.share * 100:.0f}%)",
+                *(cand.clusters[i].render_cell() for cand in self.candidates),
+                "100%",
+            ]
+            for i, hc in enumerate(header_clusters)
+        ]
+        rows.append(["weighted", "", *(self._weighted(c) for c in self.candidates), ""])
+        right = [False, True, *(True for _ in self.candidates), True]
+        return term.table(header, rows, right=right)
+
+    @staticmethod
+    def _weighted(cand: CandidateReport) -> str:
+        """The headline, with its interval and its denominator."""
+        # WITH its interval. This printed `weighted_score()` bare — the
+        # headline of the whole report, on every render, for every
+        # candidate. `weighted_interval` was already written and already
+        # documented as "exactly the kind of number this repo refuses to
+        # print bare"; it simply was not called. Invariant 6.
+        ws = cand.weighted_score()
+        if ws is None:
+            return "? weighted"
+        iv = cand.weighted_interval()
+        text = f"{ws * 100:.0f}% [{iv.low * 100:.0f}–{iv.high * 100:.0f}] weighted"
+        # Both the score and the interval renormalise over the traffic
+        # that was actually measured, which is the only arithmetic
+        # available — an unmeasured cluster has no rate to contribute.
+        # Renormalising silently is what makes it a lie: 70% covered and
+        # all passing printed a flat "100% weighted" while 30% of traffic
+        # had never been looked at. The denominator travels with the
+        # number, like the method does.
+        measured = cand.measured_share()
+        if measured < 0.999:
+            text += f" of {measured * 100:.0f}%"
+        return text
 
     def _render_statistics(self, best: CandidateReport | None) -> list[str]:
         """The methods block: what estimator produced which number, and what is

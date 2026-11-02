@@ -1,0 +1,27 @@
+$ onpar learn basics 1 --no-quiz
+
+
+────────────────────────────────────────────────────────────
+  [basics.1]  What a model is in bytes (weights)
+
+  lesson basics·1 — what a model is in bytes (weights)
+
+  A language model is a large array of learned numbers — the weights.
+  Everything else (layers, attention heads, MLP) is how they're organised.
+
+  Llama 3.3 70B has 70.6B parameters.
+  At q8 (8 bits per weight):
+
+    weight bytes = 70.6B × 10⁹ × 8 bits ÷ 8
+                 = 65.8 GB
+
+  Your M4 Max has 128 GB total.
+  onpar counts 96 GB usable (75%, a calibration knob).
+
+  Just the weights consume 68% of that budget.
+
+  answer: 6.5 GB  (7B × 10⁹ × 8 bits ÷ 8 = 6.5 GB)
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

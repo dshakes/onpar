@@ -1,0 +1,38 @@
+$ onpar where qwen3-30b-a3b --context 32k
+
+
+  Qwen3 30B-A3B (MoE) · 30.5B (3.3B active, MoE) · Apache-2.0 OK
+  at 32,768 context, concurrency 1
+
+  hardware                  quant     total  ~tok/s    $/hr   $/Mtok
+  ------------------------------------------------------------------
+  NVIDIA RTX 5090           q4        21.8G     254    0.55     0.60
+  NVIDIA L40S               q8        35.2G      95    0.80     2.33
+  NVIDIA A100 40 GB         q8        35.2G     172    1.10     1.78
+  NVIDIA A100 80 GB         q8        35.2G     225    1.80     2.22
+  AMD MI300X 192 GB         q8        35.2G     585    2.50     1.19
+  NVIDIA H100 80 GB SXM     q8        35.2G     370    2.90     2.18
+  NVIDIA H200 141 GB        q8        35.2G     530    3.60     1.89
+  NVIDIA B200 192 GB        q8        35.2G     883    5.50     1.73
+  2× NVIDIA H100            q8        35.2G     684    5.80     2.35
+  TPU v5e (8 chips)         q8        35.2G     659    9.60     4.05
+  4× NVIDIA H100            q8        35.2G    1313   11.60     2.45
+  TPU v5p (4 chips)         q8        35.2G    1084   16.80     4.31
+  TPU v6e Trillium (8 chip  q8        35.2G    1257   21.60     4.77
+  8× NVIDIA H200            q8        35.2G    3683   28.80     2.17
+  Apple M3 Ultra 512 GB     q8        35.2G      90       -        -
+  Apple M4 Max 128 GB       q8        35.2G      60       -        -
+  Apple M4 Pro 48 GB        q8        35.2G      30       -        -
+  CPU only (64 GB DDR5)     q8        35.2G       7       -        - slow
+
+  WILL NOT RUN
+  NVIDIA L4                 short by 160 MB — weights fit, but KV at 32,768 ctx x1 does not
+  NVIDIA RTX 4090           short by 160 MB — weights fit, but KV at 32,768 ctx x1 does not
+
+  $/Mtok assumes the machine is busy at the requested concurrency;
+  a box at 10% utilisation costs about ten times this per token.
+  Throughput figures are roofline estimates, not measurements.
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

@@ -452,7 +452,7 @@ def prefill_decode() -> None:
 def kv_growth() -> None:
     """Change over two variables — lines, faceted by attention scheme.
 
-    Log-scaled y because the whole point is that MLA is ~50× smaller, and a
+    Log-scaled y because the whole point is that MLA is ~64× smaller, and a
     linear axis would render three of the four series as one flat line.
     """
     W, H = 860, 470
@@ -461,7 +461,7 @@ def kv_growth() -> None:
         H,
         "Why the same model needs wildly different memory",
         "KV cache size per stream against context length, for MHA, GQA and MLA "
-        "attention. A logarithmic axis, because MLA is roughly fifty times "
+        "attention. A logarithmic axis, because MLA is roughly sixty-four times "
         "smaller than MHA and a linear axis would flatten the others to nothing.",
     )
     p.append(
@@ -525,7 +525,7 @@ def kv_growth() -> None:
     p.append(legend(x0, y0 + ph + 76, [(s, n) for s, n, _ in schemes]))
     p.append(
         f'<text x="28" y="{H - 22}" class="note">Using the MHA formula on an MLA '
-        f"model overestimates its KV cache by around fifty times — which is how a "
+        f"model overestimates its KV cache by around sixty-four times — which is how a "
         f"model that fits comfortably gets rejected as too big.</text>"
     )
     save("edu-kv-growth.svg", p)
@@ -2136,7 +2136,7 @@ def landscape_2026() -> None:
 
 
 def autotune() -> None:
-    """Requirements in, twelve knobs through three forks, native config out.
+    """Requirements in, thirteen knobs through three forks, native config out.
 
     The knob list, the requirement fields, the engines and both thresholds are
     imported from the planner, so a new `Setting` or `Engine` shows up here on
@@ -2291,14 +2291,10 @@ def og_card() -> None:
     p[0] = p[0].replace("<svg ", '<svg data-theme="dark" ', 1)
     p.pop()
 
-    # Brand: incumbent dot, gate, candidate dot, as in the site header.
-    p.append(
-        '<circle cx="80" cy="88" r="9" fill="#f0a340"/>'
-        '<rect x="95" y="86" width="22" height="3" fill="#1e3546"/>'
-        '<circle cx="132" cy="88" r="9" fill="#2fd4c4"/>'
-        '<text x="158" y="100" style="fill:var(--ink);font-size:36px;font-weight:700">'
-        "onpar</text>"
-    )
+    # Brand: the on-dark lockup from tools/brand.py, the same art as the site nav.
+    import brand
+
+    p.append(brand.lockup_group("dark", 72, 64, 0.9))
     p.append(chip(1000, 60, 120, 120, accent=0, proven=True))
 
     p.append(
@@ -2333,6 +2329,192 @@ def og_card() -> None:
     save("og-card.svg", p, outs=(ROOT / "site" / "assets",))
 
 
+FIGURES = ROOT / "docs" / "guide" / "_runs" / "figures.json"
+
+
+def loop_animated(figures: pathlib.Path = FIGURES, outs: tuple[pathlib.Path, ...] = OUTS) -> None:
+    """The switch loop, every figure read from the recorded run.
+
+    This was hand-drawn once and carried numbers nobody had measured. Now each
+    card quotes one field of figures.json, which tools/story_run.sh writes from
+    the run's own artifacts, so the hero can only say what the last run saw.
+    No file, no diagram: a typed fallback is how the invented numbers got in.
+    """
+    import json
+    import sys
+
+    sys.path.insert(0, str(ROOT / "src"))
+    from onpar.engines import Setting
+
+    if not figures.exists():
+        raise SystemExit(f"{figures} is missing: run tools/story_run.sh first")
+    f = json.loads(figures.read_text())
+    stamp = str(f["recorded"])
+    if "$" in stamp:
+        raise SystemExit(
+            f"{figures}: recorded is {stamp!r}, an unexpanded shell variable: "
+            "fix tools/story_run.sh and run it again"
+        )
+    w8, ag = f["weighted"], f["agentic"]
+    shapes = f["proven"] + f["unproven"] + f["regret"]
+
+    # (stage, what it does, the figure, its label, an optional second figure)
+    stages = [
+        ("Observe", "swap one base_url", f"{f['captures']}", "captures", None),
+        (
+            "Distill",
+            "cluster by task shape",
+            f"{f['shapes']}",
+            "task shapes",
+            f"{f['sessions']} agent sessions",
+        ),
+        (
+            "Fit",
+            "your hardware",
+            f"{f['feasible_models']} of {f['catalogue_models']}",
+            "models fit",
+            None,
+        ),
+        (
+            "Prove",
+            f"vs {f['incumbent']}",
+            f"κ={ag['kappa']:.2f}",
+            f"over {ag['steps']} steps",
+            f"{w8['point']}% [{w8['low']}–{w8['high']}]",
+        ),
+        ("Deploy", "native config", f"{len(Setting)}", "knobs set, 0 typed", None),
+        (
+            "Cut over",
+            "shadow first",
+            f"move {f['move_pct']}%",
+            "shadow holds" if f["move_pct"] == 0 else "of traffic moved",
+            None,
+        ),
+        ("Guard", "re-checks on release", "receipt", "holds", None),
+    ]
+
+    W, H, cycle = 1200, 420, len(stages)
+    title = (
+        f"Can {f['candidate']} replace {f['incumbent']}? "
+        f"The switch loop on {f['captures']} recorded captures"
+    )
+    desc = (
+        f"Traffic flows through seven stages: observe, distill, fit, prove, deploy, "
+        f"cut over, guard. {f['captures']} captures, {f['shapes']} task shapes, "
+        f"{f['feasible_models']} of {f['catalogue_models']} models fit, agreement "
+        f"kappa {ag['kappa']:.2f} over {ag['steps']} steps, weighted {w8['point']}% "
+        f"[{w8['low']}-{w8['high']}], move {f['move_pct']}%. Figures from "
+        f"docs/guide/_runs/figures.json, {stamp}."
+    )
+    p = head(W, H, title, desc)
+    p.append(
+        "<style>"
+        ".kk{fill:var(--s0);font-size:11px;font-weight:700;letter-spacing:.2em}"
+        ".ttl{fill:var(--ink);font-size:13.5px;font-weight:700}"
+        ".cap{fill:var(--muted);font-size:10.5px}"
+        f".num{{font-family:{MONO};font-size:17px;font-weight:800;fill:var(--ink)}}"
+        ".nn{fill:var(--ink);font-size:11.5px;font-weight:800}"
+        # One packet makes the whole trip; each stage lights as it arrives.
+        f"@keyframes looptok{{0%{{transform:translateX(0);opacity:0}}4%,92%{{opacity:1}}"
+        f"100%{{transform:translateX(964px);opacity:0}}}}"
+        "@keyframes looplamp{0%,10%,100%{opacity:.35}4%{opacity:1}}"
+        f".tok{{transform-box:fill-box;"
+        f"animation:looptok {cycle}s cubic-bezier(.5,0,.5,1) infinite}}"
+        f".lamp{{animation:looplamp {cycle}s linear infinite}}"
+        "@media (prefers-reduced-motion:reduce){"
+        ".tok,.lamp{animation:none;opacity:1;transform:none}}"
+        "</style>"
+    )
+    p.append(f'<text x="28" y="56" class="kk">THE SWITCH LOOP · {f["candidate"].upper()}</text>')
+
+    x0, x1, ty = 118, 1082, 112
+    step = (x1 - x0) / (len(stages) - 1)
+    p.append(
+        f'<path d="M{x0} {ty} H{x1}" stroke="var(--grid)" stroke-width="3" stroke-linecap="round"/>'
+    )
+    p.append(
+        f'<path class="flow" d="M{x0} {ty} H{x1}" stroke="var(--s0)" stroke-width="3" '
+        'stroke-dasharray="2 26" stroke-linecap="round" opacity="0.6"/>'
+    )
+    p.append(
+        f'<g class="tok"><circle cx="{x0}" cy="{ty}" r="7" fill="var(--s0)" opacity="0.35"/>'
+        f'<circle cx="{x0}" cy="{ty}" r="3.5" fill="var(--ink)"/></g>'
+    )
+
+    cw, ch, cy = 140, 132, 146
+    for i, (name, does, num, label, extra) in enumerate(stages):
+        cx = x0 + i * step
+        hero = name == "Prove"
+        # Warm for the incumbent you pay for, cool for the candidate you prove:
+        # the same two poles as the chip motif.
+        slot = 2 if i == 0 else 0
+        delay = f'style="animation-delay:{i - cycle}s"'
+        p.append(
+            f'<circle cx="{cx:.0f}" cy="{ty}" r="13" fill="var(--panel)" stroke="var(--s{slot})"/>'
+            f'<circle class="lamp" {delay} cx="{cx:.0f}" cy="{ty}" r="13" fill="var(--s{slot})"/>'
+            f'<text x="{cx:.0f}" y="{ty + 4}" class="nn" text-anchor="middle">{i + 1}</text>'
+        )
+        left = cx - cw / 2
+        stroke = "var(--s0)" if hero else "var(--grid)"
+        p.append(
+            f'<rect x="{left:.0f}" y="{cy}" width="{cw}" height="{ch}" rx="10" '
+            f'fill="var(--panel)" stroke="{stroke}" stroke-width="{1.6 if hero else 1}"/>'
+            f'<rect class="lamp" {delay} x="{left:.0f}" y="{cy}" width="{cw}" height="{ch}" '
+            f'rx="10" fill="none" stroke="var(--s{slot})" stroke-width="1.6"/>'
+        )
+        tx = left + 14
+        p.append(f'<text x="{tx:.0f}" y="{cy + 24}" class="ttl">{name}</text>')
+        p.append(f'<text x="{tx:.0f}" y="{cy + 41}" class="cap">{does}</text>')
+        color = "var(--s0)" if hero else "var(--ink)"
+        p.append(f'<text x="{tx:.0f}" y="{cy + 72}" class="num" style="fill:{color}">{num}</text>')
+        p.append(f'<text x="{tx:.0f}" y="{cy + 89}" class="lb">{label}</text>')
+        if extra:
+            p.append(f'<text x="{tx:.0f}" y="{cy + 110}" class="m">{extra}</text>')
+    # The prove card's second figure needs its own label, or it is a bare number.
+    px = x0 + 3 * step - cw / 2 + 14
+    p.append(f'<text x="{px:.0f}" y="{cy + 124}" class="cap">weighted verdict</text>')
+
+    # Where the run left the decision: the incumbent still serves, the candidate
+    # carries a receipt, and the split says why nothing moved.
+    by = 304
+    p.append(
+        f'<rect x="28" y="{by}" width="440" height="72" rx="11" fill="var(--panel)" '
+        'stroke="var(--s2)" stroke-opacity="0.5"/>'
+        f'<rect x="732" y="{by}" width="440" height="72" rx="11" fill="var(--panel)" '
+        'stroke="var(--s0)" stroke-opacity="0.5"/>'
+        f'<path d="M482 {by + 36} H718" stroke="var(--grid)" stroke-width="1.5" '
+        'stroke-dasharray="4 4"/>'
+    )
+    p.append(f'<text x="50" y="{by + 24}" class="kk" style="fill:var(--s2)">INCUMBENT</text>')
+    p.append(f'<text x="50" y="{by + 50}" class="num">{f["incumbent"]}</text>')
+    p.append(
+        f'<text x="50" y="{by + 64}" class="cap">'
+        "serves every request until shadow says otherwise</text>"
+    )
+    p.append(f'<text x="754" y="{by + 24}" class="kk">CANDIDATE</text>')
+    p.append(
+        f'<text x="754" y="{by + 50}" class="num" style="fill:var(--s0)">{f["candidate"]}</text>'
+    )
+    p.append(
+        f'<text x="754" y="{by + 64}" class="cap">{f["proven"]} proven · {f["unproven"]} '
+        f"unproven · {f['regret']} regret, of {shapes} shapes</text>"
+    )
+    p.append(
+        f'<rect x="512" y="{by + 18}" width="176" height="36" rx="18" fill="var(--panel)" '
+        'stroke="var(--s0)" stroke-width="1.4"/>'
+        f'<text x="600" y="{by + 41}" class="m" text-anchor="middle">receipt {f["digest"]}</text>'
+    )
+    note(
+        p,
+        28,
+        402,
+        f"Every figure is read from the recorded run ({stamp}). "
+        "Nothing moves to the candidate until shadow mode says it can.",
+        180,
+    )
+    save("loop-animated.svg", p, outs)
+
+
 if __name__ == "__main__":
     print("writing diagrams:")
     memory_breakdown()
@@ -2363,5 +2545,8 @@ if __name__ == "__main__":
     import site_data
 
     site_data.write(site_data.generate())
+
+    # Last: it refuses without a recorded run, and must not block the rest.
+    loop_animated()
 
     print("done")

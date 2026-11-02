@@ -1,0 +1,31 @@
+{
+  "recorded": "recorded 2026-11-02 on M4 Max \u00b7 128 GB \u00b7 onpar 1.4.0",
+  "feasible_models": 5,
+  "infeasible_models": 9,
+  "catalogue_models": 14,
+  "captures": 197,
+  "shapes": 7,
+  "items": 197,
+  "sessions": 12,
+  "steps": 36,
+  "candidate": "qwen3-30b-a3b",
+  "incumbent": "gpt-4o-mini",
+  "proven": 0,
+  "unproven": 6,
+  "regret": 1,
+  "movable_pct": 0,
+  "digest": "48e81113a0ab",
+  "weighted": {
+    "point": 75,
+    "low": 70,
+    "high": 77
+  },
+  "agentic": {
+    "agreement": 100,
+    "low": 90,
+    "high": 100,
+    "steps": 36,
+    "kappa": 1.0
+  },
+  "move_pct": 0
+}

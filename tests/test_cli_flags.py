@@ -457,3 +457,24 @@ def test_measure_discloses_a_declared_quant_that_does_not_fit_this_machine(monke
         "an infeasible declared quant must say so, not print a bare roofline as if "
         "the config were real"
     )
+
+
+def test_every_flag_and_positional_has_help():
+    """A blank help cell in `--help` and the generated reference is a flag
+    nobody can use without reading the source."""
+    import argparse
+
+    from onpar import cli
+
+    def walk(p: argparse.ArgumentParser, path: str):
+        for a in p._actions:
+            if isinstance(a, argparse._HelpAction):
+                continue
+            if isinstance(a, argparse._SubParsersAction):
+                for name, sub in a.choices.items():
+                    yield from walk(sub, f"{path} {name}")
+                continue
+            yield f"{path} {(a.option_strings or [a.dest])[0]}", a.help
+
+    blank = [where for where, h in walk(cli.build_parser(), "onpar") if not (h or "").strip()]
+    assert not blank, f"flags without help: {blank}"

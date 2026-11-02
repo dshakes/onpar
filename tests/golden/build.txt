@@ -17,7 +17,7 @@ MACHINE   M4 Max   (detected locally)
 ENGINE    mlx   Apple silicon: the CUDA engines cannot run here at all. MLX has the better batching story of the two Metal options.
 
 RUN
-  mlx_lm.server --model Qwen/Qwen3-30B-A3B --decode-concurrency 32 --prompt-concurrency 32 --prefill-step-size 2048
+  mlx_lm.server --model Qwen/Qwen3-30B-A3B --decode-concurrency 32 --prompt-concurrency 32 --prefill-step-size 2048 --chat-template-args '{"enable_thinking":false}'
 
 NOT EXPRESSED
   · context_length: mlx_lm.server takes no context-length flag; context is bounded by the model config and by unified memory

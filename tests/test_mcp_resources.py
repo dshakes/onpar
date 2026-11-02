@@ -98,7 +98,7 @@ def test_it_serves_its_own_artifacts_not_whatever_json_is_lying_around(root):
     with pytest.raises(ValueError, match="not a onpar receipt or eval set"):
         mcp.read_resource("onpar:///notes.json")
 
-    names = [r["name"] for r in mcp.resources()]
+    names = [r["name"] for r in mcp.resources()[0]]
     assert "notes.json" not in names and "notes.txt" not in names
     assert "sneaky.json" not in names, "a listing is itself a disclosure of what exists"
     assert "borrowed.json" not in names, (
@@ -111,7 +111,7 @@ def test_it_serves_its_own_artifacts_not_whatever_json_is_lying_around(root):
 def test_the_kind_is_read_from_the_artifact_not_from_the_filename(root):
     """A file named `receipt.json` that is not one must not be served as one."""
     (root / "impostor.json").write_text('{"receipt": {"format": "something/else"}}')
-    assert "impostor.json" not in [r["name"] for r in mcp.resources()]
+    assert "impostor.json" not in [r["name"] for r in mcp.resources()[0]]
     with pytest.raises(ValueError):
         mcp.read_resource("onpar:///impostor.json")
 
@@ -121,7 +121,7 @@ def test_one_boundary_not_two(root):
     weaker one is the one that gets found — so this asserts that everything
     listed can be read, and nothing else can.
     """
-    for entry in mcp.resources():
+    for entry in mcp.resources()[0]:
         assert mcp.read_resource(entry["uri"])["text"]
 
 
@@ -131,7 +131,7 @@ def test_one_boundary_not_two(root):
 def test_a_listing_is_stable_across_calls(root):
     """An agent diffing two listings of an unchanged directory should see
     nothing, not a reshuffle."""
-    assert mcp.resources() == mcp.resources()
+    assert mcp.resources()[0] == mcp.resources()[0]
 
 
 def test_a_receipt_reads_back_as_the_receipt_it_was(root):
@@ -149,7 +149,7 @@ def test_the_listing_is_capped_and_the_cap_is_a_number_not_a_surprise(root):
     text = (root / "receipt.json").read_text()
     for i in range(mcp.LIST_LIMIT + 5):
         (root / f"r{i}.json").write_text(text)
-    assert len(mcp.resources()) == mcp.LIST_LIMIT
+    assert len(mcp.resources()[0]) == mcp.LIST_LIMIT
 
 
 # --- prompts ---------------------------------------------------------------------
@@ -348,3 +348,63 @@ def test_several_requests_on_one_connection_each_get_a_reply():
     out = _serve(_line(*[{"jsonrpc": "2.0", "id": i, "method": "tools/list"} for i in range(1, 6)]))
     ids = [json.loads(line)["id"] for line in out.splitlines() if line.strip()]
     assert ids == [1, 2, 3, 4, 5], ids
+
+
+def test_the_listing_pages_with_a_cursor_instead_of_cutting_silently(root):
+    """LIST_LIMIT used to `break`: a root with one more receipt than the cap listed
+    the cap and said nothing. The MCP contract for that is `nextCursor`."""
+    for f in root.glob("*.json"):
+        f.unlink()
+    for i in range(mcp.LIST_LIMIT + 3):
+        (root / f"r{i:04d}.json").write_text(json.dumps({"items": [{"item_id": str(i)}]}))
+    first, cursor = mcp.resources()
+    assert len(first) == mcp.LIST_LIMIT and cursor == first[-1]["uri"]
+    second, end = mcp.resources(cursor)
+    assert len(second) == 3 and end is None
+    assert {r["uri"] for r in first}.isdisjoint({r["uri"] for r in second})
+    # Over the wire: the handler carries the cursor and omits it on the last page.
+    page1 = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/list", "params": {}})
+    assert page1["result"]["nextCursor"] == cursor
+    page2 = mcp.handle(
+        {"jsonrpc": "2.0", "id": 2, "method": "resources/list", "params": {"cursor": cursor}}
+    )
+    assert "nextCursor" not in page2["result"] and len(page2["result"]["resources"]) == 3
+
+
+def test_onpar_prove_refuses_a_set_nobody_collected(root):
+    """`onpar distill` writes blank candidate answers on purpose. The CLI's prove
+    and migrate refuse to grade that; the MCP tool graded it and returned 0% as
+    a verdict (found while writing the tools reference, 2026-11-02)."""
+    (root / "blank.json").write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "item_id": "1",
+                        "cluster": "c",
+                        "prompt": "p",
+                        "baseline": "a",
+                        "candidate": "",
+                    },
+                    {
+                        "item_id": "2",
+                        "cluster": "c",
+                        "prompt": "q",
+                        "baseline": "b",
+                        "candidate": "",
+                    },
+                ],
+                "shares": {"c": 1.0},
+            }
+        )
+    )
+    reply = mcp.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "onpar_prove", "arguments": {"eval_set": "blank.json"}},
+        }
+    )
+    text = json.dumps(reply)
+    assert "nothing to grade" in text and "0%" not in text.split("nothing to grade")[0]

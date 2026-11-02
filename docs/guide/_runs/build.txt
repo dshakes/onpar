@@ -1,0 +1,42 @@
+$ onpar build support assistant for 20 agents --context 32k --concurrency 8 --tool-calling
+
+
+Qwen3 30B-A3B (MoE) at q8 on M4 Max — 56.2 GB of 96.0 GB, 5 candidates fit. Engine: mlx.
+
+  understood:
+    · workload = interactive   (from "assistant")
+    · concurrency = 4   (from "20 agents — about a fifth in flight at once, since people read and think between requests")
+    · prefix_sharing = 0.7   (from "agents — implies requests share a long prefix, which changes which engine is correct")
+
+MODEL     Qwen3 30B-A3B (MoE) @ q8   (56.2 GB)
+MACHINE   M4 Max   (detected locally)
+ENGINE    mlx   Apple silicon: the CUDA engines cannot run here at all. MLX has the better batching story of the two Metal options.
+
+RUN
+  mlx_lm.server --model Qwen/Qwen3-30B-A3B --decode-concurrency 32 --prompt-concurrency 32 --prefill-step-size 2048 --chat-template-args '{"enable_thinking":false}'
+
+NOT EXPRESSED
+  · context_length: mlx_lm.server takes no context-length flag; context is bounded by the model config and by unified memory
+  · speculative: --draft-model needs a draft model repo (org/name), not 'eagle3'; mlx has no method-name speculative flag
+  · memory_fraction: unified memory: there is no separate VRAM pool to reserve a fraction of
+  · tool_calling: no verified tool-calling flag in mlx_lm.server --help; tool calls are returned as structured text output
+  · quantization: mlx bakes precision into the weights: serve an -q8 repo rather than converting at start-up
+
+WORTH CHANGING
+  [medium] Try a higher-precision quantisation, or more context.
+  [low] State a TTFT or ITL budget.
+
+THEN PROVE IT
+  onpar observe                       record real requests, redacted before storage
+  onpar distill                       turn them into an eval set
+  onpar prove evalset.json --candidate qwen3-30b-a3b \
+      --incumbent <your-current-model> --incumbent-cost <$/mo> \
+      --candidate-cost <$/mo> --traffic-window '14 days'
+  onpar brief receipt.json --out brief.html
+
+Nothing above has been run. Deployment is yours to trigger, and no
+eval result moves production traffic without a human.
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

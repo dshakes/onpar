@@ -39,11 +39,11 @@ Agents make this harder and more valuable. An agent request is one step in a loo
 Seven stages, one loop: observe, distill, fit, prove, deploy, cut over, guard.
 
 - **Size it.** `onpar fit` sizes every catalogue model on the host. It gets MoE totals, GQA `kv_heads` and MLA `kv_lora_rank` right. Throughput is a roofline estimate, not measured.
-- **Serve it.** `onpar build` and `onpar run` pick the engine for the silicon and emit native config. Seven engines have adapters: vLLM, vLLM-TPU, SGLang, llm-d, llama.cpp, MLX and Ollama. The planner sets twelve knobs and gives each a reason.
+- **Serve it.** `onpar build` and `onpar run` pick the engine for the silicon and emit native config. Seven engines have adapters: vLLM, vLLM-TPU, SGLang, llm-d, llama.cpp, MLX and Ollama. The planner sets thirteen knobs and gives each a reason.
 - **Capture it.** A Rust gateway records OpenAI chat, OpenAI Responses and Anthropic Messages as one record. Redaction runs before persistence and fails closed. Storage is XChaCha20-Poly1305. Measured overhead is +0.07 ms at p95 against a 15 ms budget.
 - **Prove it.** `onpar prove` uses Wilson intervals. The judge is disclosed, with position and length bias measured. `onpar label` has a human grade the judge, blind. Agentic traffic gets step replay, schema-validated tool arguments, tool-leak detection, Cohen's κ decision agreement and whole-session replay from the recording. A miss stops the run. It never makes a live tool call.
 - **Move it.** `onpar migrate` runs shadow, canary and rollback. Nothing authorises a cutover except shadow mode.
-- **Learn it.** `onpar learn` teaches 15 lessons from first principles, using the host's own numbers. `onpar doctor` says what is installed and what to run next.
+- **Learn it.** `onpar learn` teaches 36 lessons from first principles, using the host's own numbers. `onpar doctor` says what is installed and what to run next.
 
 The output is a content-addressed, local receipt (format v3) that re-verifies. Example from the README: $2,847 a month on an incumbent, 400 captures over 14 days, and a saving of $2,506–$2,530 a month (about 89%) on traffic proven at or above the 90% bar.
 
@@ -128,7 +128,7 @@ Pricing anchors to spend migrated, not seats. The north-star metric is dollars o
 
 ## Status
 
-**Beta, built in the open.** Version 1.3.4. 2531 tests (2234 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
+**Beta, built in the open.** Version 1.3.4. 2772 tests (2475 Python, 297 Rust). 20 ADRs. All three distributions are live on PyPI. See [GA readiness](95-ga-readiness.md) for the ranked blockers.
 
 **Biggest open risk, stated plainly:** `observe` has not yet been run against real production traffic. The invariants are tested. The live run is the next proof, and it needs a real upstream and a willing team.
 

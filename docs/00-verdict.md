@@ -91,10 +91,10 @@ It also means: **you can dogfood the whole loop locally**, with 128 GB of unifie
 The reframe shipped as the seven-stage loop: observe, distill, fit, prove, deploy, cut over, guard.
 
 - **Size it.** `onpar fit` sizes every catalogue model on the host and gets MoE totals, GQA `kv_heads` and MLA `kv_lora_rank` right. Throughput is a roofline estimate, not measured.
-- **Tune it.** `onpar build` sets twelve knobs per engine and gives each one a reason.
+- **Tune it.** `onpar build` sets thirteen knobs per engine and gives each one a reason.
 - **Prove it.** `onpar prove` grades candidates on your captured traffic, with Wilson intervals, a disclosed judge and measured judge bias. Agentic traffic is replayed per step and per session ([ADR-0020](adr/0020-agentic-evals-replay-the-step-not-the-prompt.md)). `onpar label` has a human grade the judge, blind.
 - **Move it.** `onpar migrate` runs shadow, canary and rollback. Nothing but shadow mode authorises a cutover. A judge alone never promotes.
-- **Learn it.** `onpar learn` teaches 15 lessons on the host's own numbers. `onpar doctor` says what is installed and what to run next.
+- **Learn it.** `onpar learn` teaches 36 lessons in five tracks on the host's own numbers. `onpar doctor` says what is installed and what to run next.
 
 The datapath is in the request path only while migrating ([ADR-0015](adr/0015-in-the-path-only-while-migrating.md)).
 

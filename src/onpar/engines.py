@@ -37,8 +37,8 @@ encoded — never by rewriting a flag name.
 **A flag this module cannot cite is a flag it does not emit.**
 
 Every entry below carries the source it was checked against. Where the docs were
-truncated or ambiguous — SGLang's grammar backend and its speculative-decoding
-family, at the time of writing — the adapter returns [`Unsupported`] with the
+truncated or ambiguous — SGLang's speculative-decoding family, at the time of
+writing — the adapter returns [`Unsupported`] with the
 reason, and the caller surfaces a gap. It does not emit a plausible guess.
 
 This is not caution for its own sake. The output of this module is a command a
@@ -174,6 +174,18 @@ class LoraFleet:
         )
 
 
+#: The chat-template kwarg that switches thinking off. Qwen3's template reads
+#: `enable_thinking`; every catalogue model marked `reasoning` uses it today.
+#: ponytail: one spelling for every family; a family whose template reads a
+#: different kwarg needs it carried on the catalogue row instead.
+NO_THINKING_KWARGS = json.dumps({"enable_thinking": False}, separators=(",", ":"))
+
+
+def _thinking_on(engine: str) -> Translated:
+    """Thinking wanted: every engine already does it, so there is nothing to emit."""
+    return Translated((), f"thinking stays on: the chat template enables it by default ({engine})")
+
+
 def _speculative_json(value: object) -> str:
     """Render the speculative knob as the JSON object vLLM actually parses.
 
@@ -228,6 +240,38 @@ SOURCES = {
         "https://github.com/sgl-project/sglang/blob/main/python/sglang"
         "/srt/function_call/function_call_parser.py (checked 2026-10-31)"
     ),
+    # Turning a reasoning model's thinking phase off at serve time. Each engine
+    # was asked separately, because the two that only offer a per-request switch
+    # (`chat_template_kwargs`, Ollama's `think`) are Unsupported, not guessed.
+    # vLLM: "--default-chat-template-kwargs ... Example: '{"enable_thinking":
+    # false}' to disable thinking mode by default for Qwen3/DeepSeek models."
+    "vllm_thinking": "https://docs.vllm.ai/en/stable/cli/serve.html (checked 2026-11-01)",
+    # SGLang: `default_chat_template_kwargs` in arg_groups/fields/serving.py,
+    # rendered `--default-chat-template-kwargs` by arg_utils.py (`"--" +
+    # name.replace("_", "-")`). Present in the v0.5.22 release tag; not yet on
+    # the published server-arguments page, which is why the source is cited.
+    "sglang_thinking": (
+        "https://github.com/sgl-project/sglang/blob/v0.5.22/python/sglang/srt"
+        "/arg_groups/fields/serving.py (checked 2026-11-01)"
+    ),
+    # mlx: "--chat-template-args  A JSON formatted string of arguments for the
+    # tokenizer's apply_chat_template, e.g. '{"enable_thinking":false}'".
+    "mlx_thinking": "mlx_lm.server --help, mlx-lm 0.32.2 (checked 2026-11-01)",
+    # llama.cpp: "--reasoning-budget N  token budget for thinking: -1 for
+    # unrestricted, 0 for immediate end". Needs --jinja, on by default here.
+    "llamacpp_thinking": "llama-server --help, build 10210 (checked 2026-11-01)",
+    # Ollama 0.21.0: `ollama serve --help` lists no thinking variable; `think`
+    # is a per-request field of /api/chat only.
+    "ollama_thinking": "ollama serve --help, ollama 0.21.0 (checked 2026-11-01)",
+    # SGLang: `grammar_backend` in arg_groups/fields/exec_.py ("Choose the
+    # backend for grammar-guided decoding"), choices in arg_groups/choices.py,
+    # rendered `--grammar-backend` by arg_utils.py. Absent from the published
+    # server-arguments page, which is why this was Unsupported until the
+    # source was read.
+    "sglang_structured_output": (
+        "https://github.com/sgl-project/sglang/blob/v0.5.22/python/sglang/srt"
+        "/arg_groups/fields/exec_.py (checked 2026-11-02)"
+    ),
     # llama.cpp: `--jinja` flag, confirmed in tools/server/README.md.
     "llamacpp_tool_calling": (
         "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md"
@@ -257,6 +301,12 @@ class Setting(StrEnum):
     #: maps it to the engine-specific parser flag. Without the right parser, tool
     #: calls return as plain text (finish_reason: stop) — a silent failure.
     TOOL_CALLING = "tool_calling"
+    #: Whether the model may emit a reasoning phase before its answer. Only
+    #: attached for catalogue models marked `reasoning`. Off by default there:
+    #: a Qwen3 server left thinking spends a small `max_tokens` on reasoning and
+    #: returns `content: ""`, which an eval reads as a wrong answer. `True` is
+    #: the engine's own default, so it translates to nothing.
+    THINKING = "thinking"
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,6 +514,12 @@ class VllmAdapter(Adapter):
                         "function",
                     )
                 )
+            case Setting.THINKING:
+                if value:
+                    return _thinking_on("vllm")
+                # A server-wide default merged under each request's own
+                # chat_template_kwargs, which still win. See SOURCES.
+                return Translated(("--default-chat-template-kwargs", NO_THINKING_KWARGS))
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -482,11 +538,10 @@ class VllmAdapter(Adapter):
 class SglangAdapter(Adapter):
     """SGLang. Flags verified against the source in [`SOURCES`].
 
-    Two entries are deliberately absent. The published argument page was
-    truncated before the speculative-decoding family and the grammar backend, so
-    neither is emitted. `--grammar-backend` is the *likely* name — it is
-    referenced indirectly elsewhere in those docs — and likely is not a standard
-    this module is willing to meet.
+    One entry is deliberately absent. The published argument page was truncated
+    before the speculative-decoding family, so it is not emitted. The grammar
+    backend was absent for the same reason until it was read off the release
+    source instead; see `SOURCES["sglang_structured_output"]`.
     """
 
     name = "sglang"
@@ -576,12 +631,15 @@ class SglangAdapter(Adapter):
             case Setting.STRUCTURED_OUTPUT:
                 if not value:
                     return Translated(())
-                return Unsupported(
-                    setting,
-                    "the grammar-backend flag was not on the verified page. "
-                    f"{value!r} is a valid backend value, but the flag that "
-                    "carries it is unconfirmed",
-                )
+                # A choice list, so the value is checked rather than passed
+                # through: an unknown backend fails at start-up.
+                if value not in SGLANG_GRAMMAR_BACKENDS:
+                    return Unsupported(
+                        setting,
+                        f"SGLang's --grammar-backend takes one of "
+                        f"{', '.join(sorted(SGLANG_GRAMMAR_BACKENDS))}, not {value!r}",
+                    )
+                return Translated(("--grammar-backend", str(value)))
             case Setting.TOOL_CALLING:
                 if not value:
                     return Translated((), "tool calling is not requested")
@@ -595,6 +653,11 @@ class SglangAdapter(Adapter):
                 # SGLang takes a single flag; auto-enable is on by default.
                 # Verified: sgl-project/sglang server_args.py (2026-10-31).
                 return Translated(("--tool-call-parser", parser))
+            case Setting.THINKING:
+                if value:
+                    return _thinking_on("sglang")
+                # Same flag name and JSON shape as vLLM, verified separately.
+                return Translated(("--default-chat-template-kwargs", NO_THINKING_KWARGS))
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -740,6 +803,10 @@ class MlxAdapter(Adapter):
                     "no verified tool-calling flag in mlx_lm.server --help; "
                     "tool calls are returned as structured text output",
                 )
+            case Setting.THINKING:
+                if value:
+                    return _thinking_on("mlx")
+                return Translated(("--chat-template-args", NO_THINKING_KWARGS))
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -771,6 +838,11 @@ class MlxAdapter(Adapter):
 #: and `fp4_e2m1` are recent additions; an older build may take only `auto`,
 #: `fp8_e5m2`, `fp8_e4m3`, which is why a refusal here names the set rather
 #: than asserting the value is impossible.
+#: `--grammar-backend` choices, from GRAMMAR_BACKEND_CHOICES in SGLang v0.5.22's
+#: arg_groups/choices.py. `none` is omitted: the planner asks for a backend only
+#: when it wants output constrained.
+SGLANG_GRAMMAR_BACKENDS: frozenset[str] = frozenset({"xgrammar", "outlines", "llguidance"})
+
 SGLANG_KV_DTYPE: frozenset[str] = frozenset(
     {"auto", "bf16", "bfloat16", "fp8_e5m2", "fp8_e4m3", "fp4_e2m1"}
 )
@@ -945,6 +1017,12 @@ class LlamaCppAdapter(Adapter):
                     "tool calling via Jinja template; --chat-template-file may be "
                     "needed for the model's specific tool format",
                 )
+            case Setting.THINKING:
+                if value:
+                    return _thinking_on("llama.cpp")
+                # 0 is "immediate end" of the thinking phase. --reasoning off
+                # also exists in this build; the budget flag is the older one.
+                return Translated(("--reasoning-budget", "0"))
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -1106,6 +1184,14 @@ class OllamaAdapter(Adapter):
                     setting,
                     "Ollama handles tool calling at the API layer; the model must be "
                     "pulled with a tool-compatible chat template baked into the Modelfile",
+                )
+            case Setting.THINKING:
+                if value:
+                    return _thinking_on("ollama")
+                return Unsupported(
+                    setting,
+                    "ollama serve has no server-wide thinking switch; send "
+                    '"think": false on each /api/chat request instead',
                 )
         return Unsupported(setting, f"no mapping defined for {setting}")
 
@@ -1282,11 +1368,14 @@ def demo() -> None:
     assert out.argv[0] == "--structured-outputs-config"
 
     # Unverified means refused, with a reason — never a plausible guess.
-    for setting in (Setting.STRUCTURED_OUTPUT, Setting.SPECULATIVE):
-        gap = s.translate(setting, "xgrammar" if setting is Setting.STRUCTURED_OUTPUT else "eagle3")
-        assert isinstance(gap, Unsupported), gap
-        assert "unconfirmed" in gap.reason or "not on the verified page" in gap.reason
-    assert "--grammar-backend" not in str(s.translate(Setting.STRUCTURED_OUTPUT, "xgrammar"))
+    gap = s.translate(Setting.SPECULATIVE, "eagle3")
+    assert isinstance(gap, Unsupported) and "not on the verified page" in gap.reason, gap
+    # Cited once read off the release source; an off-list backend is refused.
+    assert s.translate(Setting.STRUCTURED_OUTPUT, "xgrammar").argv == (
+        "--grammar-backend",
+        "xgrammar",
+    )
+    assert isinstance(s.translate(Setting.STRUCTURED_OUTPUT, "regex-magic"), Unsupported)
 
     # A full command, and the gaps it could not express.
     want = {
@@ -1299,9 +1388,9 @@ def demo() -> None:
     assert argv[:3] == ["vllm", "serve", "Qwen/Qwen3-32B"]
     assert not gaps
 
-    argv, gaps = s.command("Qwen/Qwen3-32B", want)
+    argv, gaps = s.command("Qwen/Qwen3-32B", {**want, Setting.SPECULATIVE: "eagle3"})
     assert argv[:4] == ["python3", "-m", "sglang.launch_server", "--model-path"]
-    assert len(gaps) == 1 and gaps[0].setting is Setting.STRUCTURED_OUTPUT
+    assert len(gaps) == 1 and gaps[0].setting is Setting.SPECULATIVE
     # The gap is returned, not swallowed: a caller cannot miss it.
     assert "--enable-prefix-caching" not in argv
 
@@ -1395,6 +1484,28 @@ def demo() -> None:
         "--tool-call-parser",
         "qwen3_coder",
     )
+
+    # Thinking off: one intent, four spellings, one honest refusal.
+    off = {
+        "vllm": ("--default-chat-template-kwargs", '{"enable_thinking":false}'),
+        "llm-d": ("--default-chat-template-kwargs", '{"enable_thinking":false}'),
+        "sglang": ("--default-chat-template-kwargs", '{"enable_thinking":false}'),
+        "mlx": ("--chat-template-args", '{"enable_thinking":false}'),
+        "llama.cpp": ("--reasoning-budget", "0"),
+    }
+    for engine_name, argv in off.items():
+        a = adapter_for(engine_name)
+        assert a is not None and a.translate(Setting.THINKING, False).argv == argv, engine_name
+    ollama = adapter_for("ollama")
+    assert ollama is not None
+    gap = ollama.translate(Setting.THINKING, False)
+    assert isinstance(gap, Unsupported) and '"think": false' in gap.reason, gap
+    # Thinking on is every engine's default: emit nothing, refuse nothing.
+    for engine_name in (*off, "ollama"):
+        a = adapter_for(engine_name)
+        assert a is not None
+        on = a.translate(Setting.THINKING, True)
+        assert isinstance(on, Translated) and on.argv == (), engine_name
 
     print("engines: ok")
 

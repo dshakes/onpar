@@ -110,7 +110,8 @@
         "q4"
       ],
       "verified": true,
-      "repo": "Qwen/Qwen3-32B"
+      "repo": "Qwen/Qwen3-32B",
+      "reasoning": true
     },
     {
       "id": "qwen3-30b-a3b",
@@ -130,7 +131,8 @@
         "q4"
       ],
       "verified": true,
-      "repo": "Qwen/Qwen3-30B-A3B"
+      "repo": "Qwen/Qwen3-30B-A3B",
+      "reasoning": true
     },
     {
       "id": "llama-3.3-70b",
@@ -170,7 +172,8 @@
         "q4"
       ],
       "verified": true,
-      "repo": "Qwen/Qwen3-235B-A22B"
+      "repo": "Qwen/Qwen3-235B-A22B",
+      "reasoning": true
     },
     {
       "id": "deepseek-v3",

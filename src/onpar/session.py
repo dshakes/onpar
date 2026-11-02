@@ -47,6 +47,7 @@ an agent can carry it between turns without holding anything in memory.
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
@@ -128,7 +129,11 @@ def _fmt_gb(b: float) -> str:
 #: Fields whose value must ALREADY be the right type, because coercing them is
 #: the defect rather than the fix. Checked before the coercion loop, so a
 #: field listed here can never take the untouched fall-through path.
-_STRICT_TYPES: dict[str, type] = {"structured_output": bool, "tool_calling": bool}
+_STRICT_TYPES: dict[str, type] = {
+    "structured_output": bool,
+    "tool_calling": bool,
+    "thinking": bool,
+}
 
 _REQUIREMENT_TYPES: dict[str, type] = {
     # `workload` was the one field this map was missing, and the one the error
@@ -693,8 +698,11 @@ class Session:
         # Ollama's whole configuration is environment, not argv — printing argv
         # alone here would claim a command that starts with its defaults,
         # silently ignoring what was just planned for it.
-        prefix = " ".join(f"{k}={v}" for k, v in env)
-        run_line = f"{prefix} {' '.join(argv)}".strip()
+        # Quoted as launch.py does: a JSON flag value (--chat-template-args,
+        # --speculative-config) pasted unquoted loses its double quotes to the
+        # shell and reaches the engine as invalid JSON.
+        prefix = " ".join(f"{k}={shlex.quote(v)}" for k, v in env)
+        run_line = f"{prefix} {shlex.join(argv)}".strip()
 
         out = [
             f"MODEL     {best.model.name} @ {best.quant}   ({_fmt_gb(best.total_bytes)})",

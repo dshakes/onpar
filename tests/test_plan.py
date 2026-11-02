@@ -227,8 +227,10 @@ def test_a_plan_emits_a_real_command_and_reports_what_it_could_not_express():
     sgl = plan(H100, Requirements(Workload.INTERACTIVE, structured_output=True, prefix_sharing=0.9))
     argv, gaps = sgl.command("Qwen/Qwen3-32B")
     assert "--context-length" in argv and "--max-model-len" not in argv
-    # SGLang's grammar flag was not verifiable, so it is reported, not guessed.
-    assert any("structured_output" in g for g in gaps), gaps
+    # SGLang's grammar flag is cited from its release source; its speculative
+    # flags are not, so that one is reported, not guessed.
+    assert argv[argv.index("--grammar-backend") + 1] == "xgrammar"
+    assert any(g.startswith("speculative:") for g in gaps), gaps
 
 
 def test_an_engine_with_no_verified_dialect_refuses_rather_than_improvising():
@@ -445,6 +447,11 @@ def test_every_setting_the_adapter_supports_is_reachable_from_some_plan():
                                 quant=m.quants[0],
                             )
                             reachable |= {k.name for k in p.knobs}
+    # THINKING is per-model: only a catalogue row marked `reasoning` emits it.
+    q = next(x for x in load() if x.reasoning)
+    reachable |= {
+        k.name for k in plan(H100, Requirements(Workload.INTERACTIVE), q, q.quants[0]).knobs
+    }
     assert reachable == set(Setting), (
         f"never emitted: {sorted(x.value for x in set(Setting) - reachable)}"
     )
@@ -922,3 +929,21 @@ def test_tool_calling_command_carries_the_parser_flags():
     assert "--tool-call-parser" in argv, argv
     # The gap list must not carry a tool-calling failure — the adapter knows this family.
     assert not any("tool_calling" in str(g) for g in gaps), gaps
+
+
+def test_an_unnamed_quant_is_sized_at_the_best_fit_not_the_first_listed():
+    """The operator passes no quant. Sizing at `model.quants[0]` (fp16 for most
+    catalogue entries) refused Llama 3.3 70B on an 80 GB H100, which serves it
+    at q4 with room to spare. Found by the hosting lesson's own arithmetic."""
+    from onpar import catalog
+    from onpar.plan import Requirements, Workload, plan
+
+    model = catalog.get("llama-3.3-70b")
+    req = Requirements(workload=next(iter(Workload)), context=8_192, concurrency=4)
+    p = plan(H100, req, model)
+    assert p.fit is not None
+    assert p.fit.feasible, p.fit
+    assert p.fit.quant != model.quants[0]
+    # A named quant is still honoured, even when it does not fit.
+    forced = plan(H100, req, model, quant=model.quants[0])
+    assert forced.fit is not None and forced.fit.quant == model.quants[0]

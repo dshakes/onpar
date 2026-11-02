@@ -1,0 +1,17 @@
+$ onpar doctor
+
+
+  onpar 1.4.0 · what this machine can do
+
+  ✓ hardware              M4 Max · 128 GB, 96 GB usable
+  ✓ capture gateway       ~/workspace/onpar/target/release/onpar-gateway
+  ✓ compiled extension    _onpar_core 1.4.0
+  ✓ serving engines       llama-server, ollama
+  ✓ captured traffic      ~/.onpar/captures.log · 165,403 bytes
+  ✓ eval set              ~/workspace/onpar/evalset.json
+
+  next: onpar prove evalset.json --candidate-endpoint http://127.0.0.1:8000/v1
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
