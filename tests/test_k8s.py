@@ -178,10 +178,21 @@ def test_prefix_sharing_changes_the_engine_the_image_and_the_flags():
 
 
 def test_an_unverifiable_flag_is_reported_as_a_gap_not_emitted():
-    r = reconcile(workload(prefixSharing=0.9, structuredOutput=True), CLUSTER)
-    assert any("structured_output" in g for g in r.status["gaps"])
+    # SGLang's speculative-decoding flags are still uncited in engines.py, and
+    # an interactive workload at this concurrency plans eagle3. (This used to
+    # guard the grammar backend, which has since been cited from source.)
+    r = reconcile(workload(prefixSharing=0.9), CLUSTER)
+    assert r.status["engine"] == "sglang"
+    assert any(g.startswith("speculative:") for g in r.status["gaps"]), r.status["gaps"]
     args = " ".join(r.objects[0]["spec"]["template"]["spec"]["containers"][0]["command"])
-    assert "grammar-backend" not in args
+    assert "--speculative" not in args
+
+
+def test_a_cited_flag_is_emitted_not_reported_as_a_gap():
+    r = reconcile(workload(prefixSharing=0.9, structuredOutput=True), CLUSTER)
+    assert not any(g.startswith("structured_output") for g in r.status["gaps"])
+    args = r.objects[0]["spec"]["template"]["spec"]["containers"][0]["command"]
+    assert args[args.index("--grammar-backend") + 1] == "xgrammar"
 
 
 def test_gpu_count_follows_the_tensor_parallel_decision_not_the_node():

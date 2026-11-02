@@ -1,0 +1,27 @@
+$ onpar run qwen3-30b-a3b --dry-run
+
+
+  MODEL     Qwen3 30B-A3B (MoE) @ q8   (44.2 GB of 96.0 GB usable)
+  WEIGHTS   mlx-community/Qwen3-30B-A3B-8bit   (confirmed; 1 candidate(s) checked)
+  ENGINE    mlx   Apple silicon: the CUDA engines cannot run here at all. MLX has the better batching story of the two Metal options.
+  ENDPOINT  http://127.0.0.1:8000/v1
+  SPEED     ~60 tok/s single-stream   (roofline estimate, not measured)
+
+  RUN
+    mlx_lm.server --model mlx-community/Qwen3-30B-A3B-8bit --decode-concurrency 32 --prompt-concurrency 32 --prefill-step-size 2048 --chat-template-args '{"enable_thinking":false}' --host 127.0.0.1 --port 8000
+
+  NOT EXPRESSED
+    · context_length: mlx_lm.server takes no context-length flag; context is bounded by the model config and by unified memory
+    · speculative: --draft-model needs a draft model repo (org/name), not 'eagle3'; mlx has no method-name speculative flag
+    · memory_fraction: unified memory: there is no separate VRAM pool to reserve a fraction of
+    · quantization: mlx bakes precision into the weights: serve an -q8 repo rather than converting at start-up
+
+  NOTES
+    · weights repo came from the local cache; nothing was fetched to plan this
+    · the engine downloads the weights itself on first start; this does not
+
+  --dry-run: nothing was started.
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

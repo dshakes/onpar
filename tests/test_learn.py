@@ -13,8 +13,12 @@ from onpar.fit import solve
 from onpar.hardware import Hardware
 from onpar.learn import (
     BASICS,
+    HARDWARE,
+    HOSTING,
     INTERMEDIATE,
     LESSONS,
+    SERVING,
+    TRACKS,
     Context,
     _track_lessons,
     render,
@@ -72,7 +76,7 @@ def test_lesson_renders(hw_name, hw_fn, lesson):
     result = render(lesson, ctx)
 
     assert result.id == lesson.id
-    assert result.track in (BASICS, INTERMEDIATE)
+    assert result.track in TRACKS
     assert result.title
     assert isinstance(result.text, list)
     assert len(result.text) > 0, f"{lesson.id}: empty text"
@@ -188,7 +192,7 @@ def test_json_output_is_valid_and_complete():
     results = [render(ls, ctx) for ls in LESSONS]
     obj = to_json_obj(results)
 
-    assert set(obj["tracks"]) == {BASICS, INTERMEDIATE}
+    assert set(obj["tracks"]) == set(TRACKS)
     assert len(obj["lessons"]) == len(LESSONS)
 
     basics_lessons = [lr for lr in obj["lessons"] if lr["track"] == BASICS]
@@ -434,6 +438,163 @@ def test_the_curriculum_index_is_json_when_asked(capsys):
 
     assert cli.main(["learn", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert set(doc["tracks"]) == {"basics", "intermediate"}
+    assert set(doc["tracks"]) == set(TRACKS)
     assert doc["tracks"]["basics"]["lessons"][0]["n"] == 1
     assert all(lesson["title"] for tr in doc["tracks"].values() for lesson in tr["lessons"])
+
+
+# ─── hardware / serving / hosting tracks ─────────────────────────────────────
+
+NEW_TRACKS = (HARDWARE, SERVING, HOSTING)
+NEW_LESSONS = [ls for ls in LESSONS if ls.track in NEW_TRACKS]
+
+
+def _profile_ctx(profile_id: str) -> Context:
+    from onpar import hardware_catalog
+
+    return _ctx(hardware_catalog.get(profile_id).to_hardware())
+
+
+#: One synthetic machine per hardware kind onpar detects.
+KIND_CASES = ["m4-pro-48", "rtx-4090", "mi300x", "tpu-v5e-8", "cpu-64", "h200-x8"]
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    """Any socket connect fails the test: lessons compute, they never fetch."""
+    import socket
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"a lesson tried to open a connection: {args}")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+
+
+@pytest.mark.parametrize("profile_id", KIND_CASES)
+def test_every_new_lesson_renders_on_every_kind_of_machine(no_network, profile_id):
+    ctx = _profile_ctx(profile_id)
+    for lesson in NEW_LESSONS:
+        r = render(lesson, ctx)
+        assert r.id == lesson.id and r.track == lesson.track and r.title == lesson.title
+        assert r.text and len(r.text) <= 30, f"{lesson.id}: {len(r.text)} lines"
+        assert max(len(line) for line in r.text) <= 80, f"{lesson.id} on {profile_id}"
+        assert r.question and r.answer and len(r.answer) > 10, f"{lesson.id}: quiz incomplete"
+
+
+@pytest.mark.parametrize("lesson", NEW_LESSONS, ids=[ls.id for ls in NEW_LESSONS])
+def test_new_lessons_explain_their_numbers(lesson):
+    """The numbers printed come from the figures dict, which comes from code."""
+    from onpar.learn import _number_in_figures, _numbers_in_text
+
+    r = render(lesson, _ctx(_apple()))
+    nums = _numbers_in_text(r.text)
+    if len(nums) >= 3:
+        explained = sum(1 for n in nums if _number_in_figures(n, r.figures))
+        assert explained >= len(nums) // 2, f"{lesson.id}: {explained}/{len(nums)} explained"
+
+
+def test_every_tok_s_in_the_new_tracks_is_labelled_an_estimate():
+    for profile_id in KIND_CASES:
+        ctx = _profile_ctx(profile_id)
+        for lesson in NEW_LESSONS:
+            body = "\n".join(render(lesson, ctx).text)
+            if "tok/s" in body:
+                assert "roofline estimate, not measured" in body, f"{lesson.id} on {profile_id}"
+
+
+def test_new_track_ids_are_contiguous_and_sized():
+    for t in NEW_TRACKS:
+        ids = [ls.id for ls in _track_lessons(t)]
+        assert 6 <= len(ids) <= 8, f"{t}: {len(ids)}"
+        assert ids == [f"{t}.{i}" for i in range(1, len(ids) + 1)]
+
+
+def test_the_original_lesson_ids_did_not_move():
+    assert [ls.id for ls in _track_lessons(BASICS)] == [f"basics.{i}" for i in range(1, 8)]
+    assert [ls.id for ls in _track_lessons(INTERMEDIATE)] == [f"inter.{i}" for i in range(1, 9)]
+
+
+def test_the_cli_accepts_exactly_the_tracks_learn_has():
+    """The parser reads its choices from learn.TRACK_BLURBS; a new track needs no cli edit."""
+    from onpar import cli
+
+    sub = next(a for a in cli.build_parser()._actions if a.dest == "cmd" or a.choices)
+    le = sub.choices["learn"]
+    track = next(a for a in le._actions if a.dest == "track")
+    assert tuple(track.choices) == TRACKS
+
+
+@pytest.mark.parametrize("track", NEW_TRACKS)
+def test_cli_walks_a_new_track_lesson(capsys, track):
+    from onpar import cli
+
+    assert cli.main(["learn", track, "1", "--no-quiz"]) == 0
+    assert f"[{track}.1]" in capsys.readouterr().out
+
+
+def test_mcp_learn_offers_every_track():
+    from onpar.mcp import TOOLS, handle
+
+    schema = TOOLS["onpar_learn"][1]["inputSchema"]["properties"]["track"]["enum"]
+    assert set(schema) - {""} == set(TRACKS)
+    out = handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "onpar_learn", "arguments": {"track": "hosting", "lesson": 7}},
+        }
+    )
+    assert out["result"]["structuredContent"]["lessons"][0]["id"] == "hosting.7"
+
+
+def test_the_saving_lesson_quotes_the_readme_line():
+    """The README's saving example is test-pinned; the lesson must print the same line."""
+    import re
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    shown = re.search(r"^\s*(Saving: \$[\d,]+–\$[\d,]+/mo .+)$", readme, re.M)
+    assert shown
+    lesson = next(ls for ls in LESSONS if ls.id == "hosting.4")
+    text = " ".join(line.strip() for line in render(lesson, _ctx(_apple())).text)
+    assert shown.group(1).strip() in text
+
+
+def test_a_judge_alone_never_promotes_in_the_ladder_lesson():
+    lesson = next(ls for ls in LESSONS if ls.id == "hosting.7")
+    r = render(lesson, _ctx(_apple()))
+    assert r.answer.startswith("No. gate.decide() returns HOLD")
+
+
+def test_published_lesson_counts_match_the_registry():
+    """A count in prose has no owner unless a test recomputes it."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    n = {t: len(_track_lessons(t)) for t in TRACKS}
+    total = sum(n.values())
+    words = {15: "fifteen", 36: "thirty-six"}
+    total_word = words[total]
+    per_track = ", ".join(f"{n[t]} {t}" for t in TRACKS)
+
+    def read(rel: str) -> str:
+        return (root / rel).read_text()
+
+    assert f"`onpar learn basics` | {total_word} lessons in five tracks" in read("README.md")
+    site = read("site/index.html")
+    assert site.count(f"{total_word} lessons") >= 2
+    assert "fifteen lessons, basics then intermediate" not in site
+    lab = read("site/lab/index.html")
+    # The lab names basics and intermediate only, and counts those two.
+    assert f"walk the same ground in {words[n[BASICS] + n[INTERMEDIATE]]} lessons" in lab
+    assert f"`onpar learn` teaches {total} lessons in five tracks" in read("docs/00-verdict.md")
+    assert f"`onpar learn` walks {total} lessons in five tracks" in read("docs/30-architecture.md")
+    assert f"| {total} lessons ({per_track})." in read("docs/40-ux.md")
+    guide = read("docs/05-field-guide.md")
+    for t in TRACKS:
+        if t != BASICS:
+            assert f"onpar learn {t}".ljust(28) + f"# {n[t]} lessons" in guide, t
+    assert "onpar learn basics".ljust(28) + f"# {n[BASICS]} lessons" in guide
+    assert len(TRACKS) == 5, "the surfaces say 'five tracks'"

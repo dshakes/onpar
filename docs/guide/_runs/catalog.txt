@@ -1,0 +1,26 @@
+$ onpar catalog qwen3-30b-a3b
+
+
+  id            qwen3-30b-a3b
+  name          Qwen3 30B-A3B (MoE)
+  params_b      30.5
+  active_b      3.3
+  layers        48
+  kv_heads      4
+  head_dim      128
+  kv_scheme     gqa
+  max_context   131072
+  license       Apache-2.0
+  license_ok    True
+  quants        ('fp16', 'q8', 'q4')
+  verified      True
+  kv_lora_rank  None
+  repo          Qwen/Qwen3-30B-A3B
+  reasoning     True
+
+  onpar fit --explain qwen3-30b-a3b      # does it fit here, and the arithmetic
+  onpar where qwen3-30b-a3b             # which hardware runs it
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

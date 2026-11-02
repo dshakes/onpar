@@ -1,0 +1,44 @@
+$ onpar build chat assistant --context 32k --concurrency 8 --itl-ms 2
+
+
+Qwen3 30B-A3B (MoE) at q8 on M4 Max — 56.2 GB of 96.0 GB, 5 candidates fit. Engine: mlx. Cannot meet: inter-token budget is 2ms, but decode is a roofline estimate of 60 tok/s — about 17ms per token. Roofline estimate, not measured; the gap is large enough that no flag closes it. Needs a smaller model, a heavier quant, or more bandwidth.
+
+  understood:
+    · workload = interactive   (from "chat")
+
+  ? Do your requests share a long system prompt? (an agent fleet usually does)
+
+MODEL     Qwen3 30B-A3B (MoE) @ q8   (56.2 GB)
+MACHINE   M4 Max   (detected locally)
+ENGINE    mlx   Apple silicon: the CUDA engines cannot run here at all. MLX has the better batching story of the two Metal options.
+
+RUN
+  mlx_lm.server --model Qwen/Qwen3-30B-A3B --decode-concurrency 32 --prompt-concurrency 32 --prefill-step-size 2048 --chat-template-args '{"enable_thinking":false}'
+
+NOT EXPRESSED
+  · context_length: mlx_lm.server takes no context-length flag; context is bounded by the model config and by unified memory
+  · speculative: --draft-model needs a draft model repo (org/name), not 'eagle3'; mlx has no method-name speculative flag
+  · memory_fraction: unified memory: there is no separate VRAM pool to reserve a fraction of
+  · quantization: mlx bakes precision into the weights: serve an -q8 repo rather than converting at start-up
+
+CANNOT MEET
+  · inter-token budget is 2ms, but decode is a roofline estimate of 60 tok/s — about 17ms per token. Roofline estimate, not measured; the gap is large enough that no flag closes it. Needs a smaller model, a heavier quant, or more bandwidth.
+
+WORTH CHANGING
+  [high] Measure prefix sharing before accepting this plan.
+  [medium] Try a higher-precision quantisation, or more context.
+
+THEN PROVE IT
+  onpar observe                       record real requests, redacted before storage
+  onpar distill                       turn them into an eval set
+  onpar prove evalset.json --candidate qwen3-30b-a3b \
+      --incumbent <your-current-model> --incumbent-cost <$/mo> \
+      --candidate-cost <$/mo> --traffic-window '14 days'
+  onpar brief receipt.json --out brief.html
+
+Nothing above has been run. Deployment is yours to trigger, and no
+eval result moves production traffic without a human.
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

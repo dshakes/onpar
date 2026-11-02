@@ -577,8 +577,12 @@ def demo() -> None:
     # 8000, SGLang on 30000.
     assert container_port(s) == 30000, container_port(s)
     assert container_port(r) == 8000, container_port(r)
-    # ...and SGLang's unverifiable grammar flag is reported, never guessed.
-    assert any("structured_output" in g for g in s.status["gaps"]), s.status["gaps"]
+    # ...and SGLang's cited grammar flag is emitted, while its uncited
+    # speculative flags are reported, never guessed.
+    assert (
+        "--grammar-backend" in s.objects[0]["spec"]["template"]["spec"]["containers"][0]["command"]
+    )
+    assert any(g.startswith("speculative:") for g in s.status["gaps"]), s.status["gaps"]
 
     # nodeSelector actually restricts, and a miss says what it missed.
     miss = reconcile(workload(nodeSelector={"pool": "nope"}), cluster)

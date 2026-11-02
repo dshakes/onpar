@@ -201,9 +201,13 @@ def _next(checks: list[Check], *, captured: bool, evalset: bool) -> str:
 
 
 def demo() -> None:
+    import contextlib
     import tempfile
 
-    with tempfile.TemporaryDirectory() as d:
+    # The eval-set check looks in the working directory, so the demo runs in an
+    # empty one: an evalset.json in the repo root (a real run leaves one there)
+    # must not change what the demo asserts.
+    with tempfile.TemporaryDirectory() as d, contextlib.chdir(d):
         r = run(Path(d))
         names = [c.name for c in r.checks]
         assert names[:3] == ["hardware", "capture gateway", "compiled extension"], names

@@ -112,6 +112,9 @@ MAX_BACKOFF = 30.0
 #: How much of an error body is kept. Enough to identify the fault, not enough to
 #: paste a stack trace into a report.
 DETAIL_CHARS = 200
+#: The failure reason for a reply that thought and never answered. A prefix, so
+#: :attr:`Collection.thinking_exhausted` can count them whatever N was.
+THINKING_EXHAUSTED = "thinking exhausted the token budget"
 
 
 class _Failed(Exception):  # noqa: N818 - it is a failure, not an error condition
@@ -153,6 +156,10 @@ class Collected:
     completion_tokens: int | None = None
     seconds: float = 0.0
     attempts: int = 1
+    #: The answer arrived with its reasoning inline as `<think>…</think>` (llama.cpp
+    #: with --reasoning-format none, older mlx). The block was stripped before
+    #: grading; only what followed it is the answer.
+    inline_think: bool = False
 
     @property
     def ok(self) -> bool:
@@ -188,6 +195,36 @@ class Collection:
         return tuple(c for c in self.replies if not c.ok)
 
     @property
+    def inline_think(self) -> int:
+        """Replies whose content carried an inline <think> block before the answer."""
+        return sum(1 for c in self.replies if c.ok and c.inline_think)
+
+    @property
+    def thinking_exhausted(self) -> int:
+        """Failures that were a reasoning phase with no answer after it."""
+        return sum(1 for c in self.failures if c.reason.startswith(THINKING_EXHAUSTED))
+
+    @property
+    def structured(self) -> int:
+        """Answered items whose request asked for JSON via `response_format`."""
+        return sum(1 for i in self.items if _json_wanted(i.response_format))
+
+    @property
+    def format_unenforced(self) -> int:
+        """Structured-output replies that are not the JSON `response_format` asked for.
+
+        Still scored, and still failed by the JSON graders: the proof stays
+        honest. Counted apart because an engine with constrained decoding
+        cannot return this, so the likely cause is the server, not the model.
+        """
+        return sum(
+            1
+            for i in self.items
+            if (want := _json_wanted(i.response_format))
+            and not _json_matches(getattr(i, self.side), want)
+        )
+
+    @property
     def served(self) -> tuple[str, ...]:
         """Distinct model ids the server echoed. More than one is worth seeing."""
         return tuple(sorted({c.served_model for c in self.replies if c.served_model}))
@@ -214,6 +251,19 @@ class Collection:
                 f"as bare user text — without the system prompt or tools the incumbent saw. "
                 f"Re-run `onpar distill` to record them."
             )
+        if n := self.inline_think:
+            out.append(
+                f"    {n} replies carried an inline <think> block; the answer after it was "
+                f"graded. Serve with a reasoning parser (or thinking off) so reasoning stays "
+                f"out of content."
+            )
+        if n := self.format_unenforced:
+            out.append(
+                f"    ⚠ {n} of {self.structured} structured-output replies were not the JSON "
+                f"response_format asked for: format not enforced by the server. On an engine "
+                f"with constrained decoding this is a server setting, not a model verdict "
+                f"(`onpar run --structured-output` says whether this engine can enforce it)."
+            )
         if not self.failures:
             return "\n".join(out)
 
@@ -221,6 +271,14 @@ class Collection:
             f"    {len(self.failures)} item(s) never got a reply and are NOT scored — "
             f"this is a smaller sample, not a lower score"
         )
+        if n := self.thinking_exhausted:
+            # Said apart from the generic line because the remedy is a config
+            # change, not a retry: the model is thinking and max_tokens ran out.
+            out.append(
+                f"    {n} of them spent the whole token budget thinking and returned no "
+                f"answer. Serve with thinking off (`onpar run` does by default for "
+                f"reasoning models) or raise max_tokens."
+            )
         grouped: dict[str, list[str]] = {}
         for c in self.failures:
             grouped.setdefault(c.reason, []).append(c.item_id)
@@ -302,8 +360,74 @@ def _once(url: str, payload: bytes, headers: dict[str, str], timeout: float) -> 
     return body
 
 
+def _json_wanted(response_format: object) -> str | None:
+    """`"object"` or `"any"` when the request asked for JSON, else None.
+
+    Accepts both spellings :func:`request_body` sends: a bare name or the OpenAI
+    `{"type": ...}` shape. A bare name outside the JSON family ("enum") asks
+    for no JSON, so it is not checked here.
+    """
+    kind = response_format.get("type") if isinstance(response_format, dict) else response_format
+    if kind in ("json_object", "json"):
+        return "object"
+    if kind == "json_schema":
+        return "any"
+    return None
+
+
+def _json_matches(text: str, want: str) -> bool:
+    """Whether `text` is JSON of the kind asked for. Deterministic, no repair."""
+    try:
+        parsed = json.loads(text.strip())
+    except ValueError:  # JSONDecodeError is a ValueError
+        return False
+    return want == "any" or isinstance(parsed, dict)
+
+
+def _thinking_exhausted(body: dict[str, Any]) -> str:
+    """The failure reason for a reasoning-only reply, with its token count.
+
+    The count is the server's own: `completion_tokens_details.reasoning_tokens`
+    when sent, else `completion_tokens`, which with no content in the reply was
+    all reasoning. Neither reported stays unreported.
+    """
+    usage = body.get("usage")
+    details = usage.get("completion_tokens_details") if isinstance(usage, dict) else None
+    n = _int_or_none(details, "reasoning_tokens")
+    if n is None:
+        n = _int_or_none(usage, "completion_tokens")
+    count = f"{n} reasoning tokens" if n is not None else "reasoning tokens not reported"
+    return f"{THINKING_EXHAUSTED}; {count}, no answer"
+
+
+_THINK_OPEN, _THINK_CLOSE = "<think>", "</think>"
+
+
+def _strip_inline_think(text: str) -> tuple[str, bool]:
+    """Drop a leading `<think>…</think>` block (or a dangling tag) from an answer.
+
+    Returns the answer and whether anything was stripped. Only a block at the
+    start is reasoning; a `<think>` quoted later in an answer is content.
+    """
+    lead = text.lstrip()
+    if lead.startswith(_THINK_OPEN):
+        end = lead.find(_THINK_CLOSE)
+        rest = lead[end + len(_THINK_CLOSE) :] if end >= 0 else ""
+        return rest.strip(), True
+    if lead.startswith(_THINK_CLOSE):
+        return lead[len(_THINK_CLOSE) :].strip(), True
+    return text, False
+
+
 def _reply(body: dict[str, Any]) -> tuple[str, tuple[dict[str, Any], ...]]:
-    """The assistant's text and tool calls, or why the body was unusable."""
+    """The assistant's text and tool calls, or why the body was unusable.
+
+    Only `content` is ever graded. A reasoning model's `reasoning` (mlx, vLLM
+    0.9+) or `reasoning_content` (DeepSeek, SGLang, llama.cpp) is the working,
+    not the answer — and when it is ALL there is, the reply is a failure, not
+    an empty answer: grading "" would score a token-budget problem as a wrong
+    answer on every item, which is how a good model reads as a bad one.
+    """
     choices = body.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
         raise _Failed(f"no usable choices in the reply: {json.dumps(body)[:DETAIL_CHARS]}")
@@ -312,6 +436,9 @@ def _reply(body: dict[str, Any]) -> tuple[str, tuple[dict[str, Any], ...]]:
         raise _Failed(f"choice carries no message: {json.dumps(choices[0])[:DETAIL_CHARS]}")
     text = message.get("content")
     calls = tuple(c for c in (message.get("tool_calls") or ()) if isinstance(c, dict))
+    reasoning = message.get("reasoning") or message.get("reasoning_content")
+    if not text and not calls and isinstance(reasoning, str) and reasoning.strip():
+        raise _Failed(_thinking_exhausted(body))
     if text is None and not calls:
         raise _Failed("the reply carried neither content nor tool calls")
     return str(text or ""), calls
@@ -353,6 +480,12 @@ def _ask(
         try:
             body = _once(url, payload, headers, timeout)
             text, calls = _reply(body)
+            text, inline = _strip_inline_think(text)
+            # An inline block that never closed is the inline form of a reasoning-
+            # only reply: max_tokens ran out mid-thought. Grading "" would score
+            # a token-budget problem as a wrong answer.
+            if inline and not text and not calls:
+                raise _Failed(_thinking_exhausted(body))
         except _Failed as e:
             return Collected(
                 item_id,
@@ -371,6 +504,7 @@ def _ask(
             text=text,
             tool_calls=calls,
             served_model=str(body.get("model") or ""),
+            inline_think=inline,
             prompt_tokens=_int_or_none(usage, "prompt_tokens"),
             completion_tokens=_int_or_none(usage, "completion_tokens"),
             seconds=time.monotonic() - started,
@@ -1055,6 +1189,21 @@ def demo() -> None:
             raise AssertionError("expected ValueError")
         except ValueError:
             pass
+
+    # A reasoning model that thought until max_tokens and answered nothing is a
+    # named failure, never an empty answer to grade. With an answer, only the
+    # answer is graded.
+    thought = {
+        "choices": [{"message": {"content": "", "reasoning": "Let me think..."}}],
+        "usage": {"completion_tokens": 200},
+    }
+    try:
+        _reply(thought)
+        raise AssertionError("a reasoning-only reply must not read as an answer")
+    except _Failed as e:
+        assert str(e) == f"{THINKING_EXHAUSTED}; 200 reasoning tokens, no answer", e
+    answered = {"choices": [{"message": {"content": "4", "reasoning_content": "2+2"}}]}
+    assert _reply(answered) == ("4", ())
 
     print(f"collect: {len(got.items)}/{got.asked} replies, {len(got.failures)} failed")
     print(got.render())

@@ -1,0 +1,20 @@
+$ onpar migrate --status
+
+
+  migration to qwen3-30b-a3b, started 2026-11-02
+  currently shadow  ·  7 runs recorded
+
+  2026-11-02  hold       197 items  free text · <=1k context #4 has 1 graded items; 7 more needed before its interval
+                                    means anything
+  2026-11-02  hold       197 items  free text · <=1k context #4 has 1 graded items; 7 more needed before its interval
+                                    means anything
+  2026-11-02  hold       197 items  free text · <=1k context #4 has 1 graded items; 7 more needed before its interval
+                                    means anything
+  2026-11-02  hold       197 items  free text · <=1k context #4 has 1 graded items; 7 more needed before its interval
+                                    means anything
+  2026-11-02  hold       197 items  free text · <=1k context #4 has 1 graded items; 7 more needed before its interval
+                                    means anything
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

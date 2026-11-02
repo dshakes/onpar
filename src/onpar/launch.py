@@ -716,6 +716,8 @@ def plan(
     host: str = "127.0.0.1",
     engine: str | None = None,
     tag: str | None = None,
+    thinking: bool = False,
+    structured_output: bool = False,
     hw: Hardware | None = None,
     exists: Callable[[str], bool] | None = None,
     cache: Path | None = None,
@@ -739,6 +741,11 @@ def plan(
             Ollama runs equally well anywhere — so this is their only way in.
         tag: the Ollama tag to pull, e.g. `llama3.1:8b-instruct-q8_0`. Required
             when `engine="ollama"` — see [`resolve_weights`]. Ignored otherwise.
+        thinking: keep a reasoning model's thinking phase on. Off by default
+            for catalogue models marked `reasoning`; no effect on others.
+        structured_output: requests carry `response_format` and the server must
+            enforce it. An engine with no constrained-decoding flag lists it
+            under NOT EXPRESSED rather than serving JSON it never checks.
         hw: the machine. Detected when omitted.
         exists: repo existence check, forwarded to [`resolve_weights`].
         cache: resolution cache path, forwarded to [`resolve_weights`].
@@ -782,7 +789,13 @@ def plan(
         if not sized.feasible:
             return _does_not_fit(model, machine, context, concurrency)
 
-    req = Requirements(Workload.INTERACTIVE, concurrency=concurrency, context=context)
+    req = Requirements(
+        Workload.INTERACTIVE,
+        concurrency=concurrency,
+        context=context,
+        thinking=thinking,
+        structured_output=structured_output,
+    )
     deployment = configure(machine, req, model, sized.quant, force_engine=forced)
     engine_name = deployment.engine.value
 

@@ -162,6 +162,9 @@ class SessionReport:
     prompt_tokens: int
     shared_prefix_tokens: int
     multi_step_captures: int = 0
+    #: Captures that asked for a response format (JSON). An engine without
+    #: constrained decoding cannot honour it, and the plan should say so first.
+    structured_captures: int = 0
 
     @property
     def agentic_share(self) -> float:
@@ -180,8 +183,11 @@ class SessionReport:
         return self.shared_prefix_tokens / self.prompt_tokens if self.prompt_tokens else 0.0
 
     def render(self) -> list[str]:
-        if not self.multi_step:
+        if not self.multi_step and not self.structured_captures:
             return []
+        structured = " --structured-output" if self.structured_captures else ""
+        if not self.multi_step:
+            return [self._structured_line(structured)]
         avg = self.multi_step_captures / self.multi_step
         lines = [
             f"  {self.multi_step} agent sessions · {self.multi_step_captures} steps "
@@ -202,7 +208,8 @@ class SessionReport:
             if self.prefix_share >= PREFIX_CACHING_FLOOR:
                 tools = " --tool-calling" if self.tool_captures else ""
                 lines.append(
-                    f"  plan for it: onpar build --prefix-sharing {self.prefix_share:.2f}{tools} "
+                    f"  plan for it: onpar build --prefix-sharing {self.prefix_share:.2f}"
+                    f"{tools}{structured} "
                     f"(turns on prefix reuse — vLLM --enable-prefix-caching, SGLang's radix "
                     f"cache — and sizes KV for it"
                     + (
@@ -211,10 +218,28 @@ class SessionReport:
                         if tools
                         else ""
                     )
+                    + (
+                        "; --structured-output asks the engine to enforce response_format, "
+                        "and the plan lists it under NOT EXPRESSED where the engine cannot"
+                        if structured
+                        else ""
+                    )
                     + f"; onpar advise --seen-prefix-sharing {self.prefix_share:.2f} checks a "
                     f"running plan against it)"
                 )
+            elif structured:
+                lines.append(self._structured_line(structured))
+        elif structured:
+            lines.append(self._structured_line(structured))
         return lines
+
+    def _structured_line(self, flag: str) -> str:
+        return (
+            f"  {self.structured_captures} captures asked for a response format · plan for it: "
+            f"onpar build{flag} (asks the engine to enforce response_format; the plan lists it "
+            "under NOT EXPRESSED where the engine cannot, so a JSON cluster that fails is a "
+            "server limit you knew about)"
+        )
 
 
 def report(captures: list[Capture]) -> SessionReport:
@@ -232,6 +257,7 @@ def report(captures: list[Capture]) -> SessionReport:
         prompt_tokens=sum(s.prompt_tokens for s in multi),
         shared_prefix_tokens=sum(s.shared_prefix_tokens for s in multi),
         multi_step_captures=sum(len(s.steps) for s in multi),
+        structured_captures=sum(1 for c in captures if getattr(c, "response_format", None)),
     )
 
 

@@ -20,7 +20,7 @@ Sequenced so each phase ships something **independently useful** — no phase is
 - Model catalog with license flags and MoE-correct sizing
 - Fit solver with `--explain`
 - Runtime recommendation across seven engines
-- `onpar learn`: 15 lessons (7 basics, 8 intermediate), every figure from the solver for the host
+- `onpar learn`: 36 lessons across five tracks (basics, intermediate, hardware, serving, hosting), every figure from the solver for the host
 - `onpar doctor`: gateway, extension and engine status, and the next command to run
 
 **Why first:** smallest thing with real standalone value. Correct MoE and GQA math alone beats most advice online. It's shareable, it builds the audience, and it validates the hardware layer everything else depends on. Nothing else in the loop needs to exist for this to be useful.
@@ -83,7 +83,7 @@ Sequenced so each phase ships something **independently useful** — no phase is
 - Spec-decode and quantization tuned from Phase 0's solve and Phase 3's proof
 - CI that runs generated configs against real engines per release
 
-- **Zero-config by default** — twelve knobs auto-set from ③ hardware and ② observed traffic, each with a stated reason; no tuning flag is ever required ([ADR-0004](adr/0004-zero-config-deployment.md))
+- **Zero-config by default** — thirteen knobs auto-set from ③ hardware and ② observed traffic, each with a stated reason; no tuning flag is ever required ([ADR-0004](adr/0004-zero-config-deployment.md))
 - **Benchmark-and-revert** — start the engine, run the observed workload shape, and drop any optimization that doesn't help on this hardware
 - **The box** — one command, one endpoint, two delivery mechanisms: container on Linux/CUDA/ROCm/k8s, supervised native on macOS/Metal ([ADR-0005](adr/0005-inference-in-a-box.md))
 - **Re-tune on arrival** — a box tuned on an A100 must re-solve when it lands on an L40S or a Mac, not apply stale settings

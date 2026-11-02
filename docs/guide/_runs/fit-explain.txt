@@ -1,0 +1,27 @@
+$ onpar fit --explain qwen3-30b-a3b --context 32k --concurrency 8
+
+
+Qwen3 30B-A3B (MoE) @ q8, 32,768 ctx, concurrency 8
+
+  weights   30.5B params x 8 bits / 8           =   28.4 GB   (MoE: ALL experts resident)
+  kv cache  98,304 B/tok x 32,768 tok x 8   =   24.0 GB   (GQA)
+  overhead  8% of weights + 1.5 GB floor      =    3.8 GB
+  --------------------------------------------------------------
+  required                                            56.2 GB
+  usable                                              96.0 GB
+  headroom                                            39.8 GB
+
+  decode is bandwidth-bound, and reads both:
+    weights    3.1 GB/token  (3.3B active)
+    kv cache   3.0 GB/token  (the whole cache, every token)
+    total      6.1 GB/token at 72% of peak
+  ~60 tok/s single-stream  (roofline estimate, not measured)
+  ! MoE at batch 8: the weight read above is held at 3.3B, which is exact only at batch 1.
+    Sequences route to different experts, so the real read is between 3.3B and 26.4B — up to 8.0x.
+    The aggregate throughput and $/Mtok figures take the low end, so they flatter rather than warn.
+
+  verdict: FITS
+
+
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0

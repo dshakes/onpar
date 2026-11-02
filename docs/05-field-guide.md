@@ -59,7 +59,7 @@ common in published fit calculators.
 - **GQA** uses `kv_heads`, not attention heads. Getting it wrong is up to an
   8x overestimate. The model fits and the naive tool says it does not.
 - **MLA** (DeepSeek family) stores one compressed latent, not per-head K/V.
-  The GQA formula overestimates KV by ~50x. Any catalogue entry with
+  The GQA formula overestimates KV by ~64x. Any catalogue entry with
   `kv_scheme: mla` must set `kv_lora_rank`, and a test enforces it.
 
 `onpar fit --explain <model-id>` prints the derivation for any row. Hardware
@@ -69,10 +69,13 @@ knobs, not truths. Throughput is a roofline estimate, not measured.
 ## Learn, and ask in English
 
 ```bash
-onpar learn                 # list the two tracks
+onpar learn                 # list the five tracks
 onpar learn basics          # 7 lessons: weights, KV, bandwidth, quantisation, MoE, Wilson
 onpar learn basics 3        # one lesson by number
 onpar learn intermediate    # 8 lessons: GQA, MLA, concurrency, prefix caching, speculative decoding
+onpar learn hardware        # 7 lessons: memory, bandwidth, box sizes, TPU, q4 vs q8, CPU-only
+onpar learn serving         # 7 lessons: engines, the planner's pick, settings and forks, native config
+onpar learn hosting         # 7 lessons: rented, box, Kubernetes, cost range, gateway, redaction, cutover
 ```
 
 Every figure comes from the same solver that powers `onpar fit`. A lesson on
@@ -89,9 +92,9 @@ invocation is a usage error, exit 2, rather than a prompt waiting on input.
 
 A stack tuned for throughput and one tuned for tail latency are configured in
 opposite directions on almost every knob. Both are "running vLLM". The planner
-sets twelve knobs and attaches the sentence that produced each one.
+sets thirteen knobs and attaches the sentence that produced each one.
 
-<img src="assets/autotune.svg" alt="The twelve knobs the planner sets per engine, with the three forks: prefix sharing picks the engine, concurrency decides speculative decoding, latency budget decides chunked prefill." width="100%">
+<img src="assets/autotune.svg" alt="The thirteen knobs the planner sets per engine, with the three forks: prefix sharing picks the engine, concurrency decides speculative decoding, latency budget decides chunked prefill." width="100%">
 
 1. **Prefix sharing picks the engine.** When many requests share a long
    prefix, SGLang's RadixAttention reuses that prefix's KV across requests.

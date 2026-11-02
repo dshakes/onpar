@@ -8,11 +8,12 @@ import json
 import os
 import pathlib
 import sys
+import textwrap
 from collections.abc import Callable
 from dataclasses import asdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from . import catalog, engine, fit, hardware
+from . import catalog, engine, fit, hardware, term
 from .events import ENV as EVENTS_ENV
 
 if TYPE_CHECKING:  # imported lazily at the call sites — `onpar fit` must stay cheap
@@ -168,26 +169,31 @@ def cmd_fit(args: argparse.Namespace) -> int:
     if not feasible:
         print("  nothing in the catalog fits. try a smaller context or --concurrency 1\n")
     else:
-        print(
-            f"  {'model':<26}{'quant':<7}{'weights':>8}{'kv':>8}{'total':>8}"
+        # `term.out.paint` is the identity off a TTY, so a pipe gets these bytes
+        # exactly as before; on a TTY the header is bold and verdicts coloured.
+        t = term.out
+        head = (
+            f"{'model':<26}{'quant':<7}{'weights':>8}{'kv':>8}{'total':>8}"
             f"{'free':>8}{'~tok/s':>8}  license"
         )
+        print(f"  {t.paint(head, bold=True)}")
         print(f"  {'-' * 88}")
         for c in feasible:
             flag = " ?" if not c.architecture_verified else ""
             tps = f"{c.tokens_per_sec_estimate:.0f}" if c.tokens_per_sec_estimate else "-"
-            slow = " slow" if c.slow else ""
+            slow = f" {t.paint('slow', 'incumbent')}" if c.slow else ""
+            ok = t.paint("OK", "proof") if c.license_clean_commercial else t.paint("!", "alarm")
             print(
                 f"  {c.name[:24] + flag:<26}{c.quant:<7}"
                 f"{c.weights_gb:>7.1f}G{c.kv_gb:>7.1f}G"
                 f"{c.total_gb:>7.1f}G{c.headroom_gb:>7.1f}G"
-                f"{tps:>8}{slow}  {c.license} {'OK' if c.license_clean_commercial else '!'}"
+                f"{tps:>8}{slow}  {c.license} {ok}"
             )
 
     if rejected and not args.quiet:
         print("\n  NOT FEASIBLE\n")
         for r in rejected:
-            print(f"  {r.name[:24]:<26}{r.reason}")
+            print(f"  {r.name[:24]:<26}{term.out.paint(r.reason, 'ink2')}")
 
     name, why = fit.recommend_runtime(hw, ctx, conc)
     print(f"\n  runtime -> {name}")
@@ -423,6 +429,10 @@ def cmd_build(args: argparse.Namespace) -> int:
     # would read as "the user said this workload never calls tools".
     if getattr(args, "tool_calling", False):
         fields["tool_calling"] = True
+    if getattr(args, "thinking", False):
+        fields["thinking"] = True
+    if getattr(args, "structured_output", False):
+        fields["structured_output"] = True
 
     turn = s.turn(
         description=" ".join(args.description) if args.description else "",
@@ -478,6 +488,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         host=args.host,
         engine=args.engine,
         tag=args.tag,
+        thinking=args.thinking,
+        structured_output=args.structured_output,
     )
     print()
     print(p.render())
@@ -1006,7 +1018,13 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         print(f"\n  migration to {st.candidate}, started {st.started}")
         print(f"  currently {st.stage().render()}  ·  {len(st.runs)} runs recorded\n")
         for r in st.runs[-5:]:
-            print(f"  {r.when}  {r.action:<9} {r.items:>4} items  {r.reason[:60]}")
+            # The reason is the decision; cut at 60 characters it read "7 more neede".
+            # Wrapped under its own row instead, so a long hold stays legible.
+            head = f"  {r.when}  {r.action:<9} {r.items:>4} items  "
+            body = textwrap.wrap(r.reason, width=max(40, _term_width() - len(head)))
+            print(head + (body[0] if body else ""))
+            for more in body[1:]:
+                print(" " * len(head) + more)
         print()
         return 0
 
@@ -1473,6 +1491,13 @@ def cmd_advise(args: argparse.Namespace) -> int:
     return 1 if drift else 0
 
 
+def _term_width() -> int:
+    """Columns to wrap to: the terminal's when there is one, else a wide default."""
+    import shutil
+
+    return shutil.get_terminal_size((120, 24)).columns
+
+
 def _refuse_ungraded(items: list, *, endpoint: str | None, source: str) -> None:
     """Refuse to grade a set where nothing was ever collected.
 
@@ -1600,10 +1625,12 @@ def _progress_line(side: str, *, quiet: bool) -> Callable[[object], None] | None
     if quiet:
         return None
 
-    def show(p: object) -> None:
+    def show(p: Any) -> None:
         # `\r` and no newline: one line that updates in place rather than a
         # thousand lines of scrollback for a thousand-item eval set.
-        print(f"\r  {side}: {p.render().strip()}   ", end="", file=sys.stderr, flush=True)
+        # Off a TTY `progress` returns the text unchanged; on one it draws a bar.
+        line = term.err.progress(p.done, p.total, f"  {side}: {p.render().strip()}   ")
+        print(f"\r{line}", end="", file=sys.stderr, flush=True)
 
     return show
 
@@ -1819,7 +1846,8 @@ def cmd_prove(args: argparse.Namespace) -> int:
         return 0
 
     print()
-    print(result.render())
+    # A TTY narrower than the matrix gets it cluster-per-row; a pipe never does.
+    print(result.render(term.out.width if term.out.on else None))
     print()
     if replayed is not None and (block := replayed.render()):
         print(block)
@@ -2085,8 +2113,8 @@ def cmd_learn(args: argparse.Namespace) -> int:
                 n = ls.id.split(".")[-1]
                 print(f"    {n}.  {ls.title}")
             print()
-        print("  onpar learn basics             # walk the basics track")
-        print("  onpar learn intermediate       # walk the intermediate track")
+        for t in _learn.TRACK_BLURBS:
+            print(f"  {'onpar learn ' + t:<30} # walk the {t} track")
         print("  onpar learn basics 3           # one lesson by number")
         print("  onpar learn --model qwen3-32b  # use a specific model")
         print()
@@ -2336,7 +2364,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ca.add_argument("--id", help="catalogue id; defaults to the repo name, lowercased")
     ca.add_argument("--name", help="display name; defaults to the repo name")
-    ca.add_argument("--license", default="unknown")
+    ca.add_argument("--license", default="unknown", help="licence name to record, e.g. Apache-2.0")
     ca.add_argument(
         "--license-ok",
         action="store_true",
@@ -2355,16 +2383,44 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("build", help="say what you're building; get a deployment and a proof plan")
     b.add_argument("description", nargs="*", help='e.g. "coding assistant for 20 engineers"')
     b.add_argument("--on", help="hardware profile id; omit to detect this machine")
-    b.add_argument("--concurrency", type=int)
-    b.add_argument("--context", type=_size_arg)
-    b.add_argument("--ttft-ms", type=int, dest="ttft_ms")
-    b.add_argument("--itl-ms", type=int, dest="itl_ms")
-    b.add_argument("--prefix-sharing", type=float, dest="prefix_sharing")
+    b.add_argument(
+        "--concurrency", type=int, help="requests in flight at once; overrides the description"
+    )
+    b.add_argument(
+        "--context",
+        type=_size_arg,
+        help="context length to size for, e.g. 32k; overrides the description",
+    )
+    b.add_argument("--ttft-ms", type=int, dest="ttft_ms", help="time-to-first-token budget, in ms")
+    b.add_argument(
+        "--itl-ms",
+        type=int,
+        dest="itl_ms",
+        help="inter-token latency budget, in ms; a plan that cannot meet it refuses",
+    )
+    b.add_argument(
+        "--prefix-sharing",
+        type=float,
+        dest="prefix_sharing",
+        help="share of prompt tokens that repeat a prefix, 0 to 1 (`onpar distill` measures it)",
+    )
     b.add_argument(
         "--tool-calling",
         action="store_true",
         dest="tool_calling",
         help="the workload calls tools; emit the engine's tool-call parser for this model family",
+    )
+    b.add_argument(
+        "--thinking",
+        action="store_true",
+        help="keep a reasoning model's thinking phase on (default: off for models "
+        "whose chat template thinks first, e.g. Qwen3)",
+    )
+    b.add_argument(
+        "--structured-output",
+        action="store_true",
+        dest="structured_output",
+        help="requests carry response_format; the server must enforce it (constrained decoding)",
     )
     b.add_argument("--save", help="write the session state here")
     b.add_argument("--resume", help="continue a saved session")
@@ -2382,7 +2438,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="simultaneous requests to tune for (a server is not a single-stream benchmark)",
     )
     r.add_argument("--host", default="127.0.0.1", help="bind address (loopback by default)")
-    r.add_argument("--port", type=int, default=8000)
+    r.add_argument(
+        "--port", type=int, default=8000, help="port the engine listens on (default 8000)"
+    )
     r.add_argument(
         "--engine",
         help="force this engine rather than letting the planner pick one "
@@ -2392,6 +2450,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--tag",
         help="the Ollama tag to pull, e.g. llama3.1:8b-instruct-q8_0 — required "
         "with --engine ollama, since its registry names are not the catalogue's ids",
+    )
+    r.add_argument(
+        "--thinking",
+        action="store_true",
+        help="keep a reasoning model's thinking phase on (default: off for models "
+        "whose chat template thinks first, e.g. Qwen3)",
+    )
+    r.add_argument(
+        "--structured-output",
+        action="store_true",
+        dest="structured_output",
+        help="requests carry response_format; the server must enforce it (constrained decoding)",
     )
     r.add_argument(
         "--dry-run",
@@ -2453,7 +2523,13 @@ def build_parser() -> argparse.ArgumentParser:
     w = sub.add_parser("watch", help="discover new models on a schedule; stages, never publishes")
     w.add_argument("--list", action="store_true", help="show what is staged and waiting")
     w.add_argument("--install", action="store_true", help="print the scheduler fragment")
-    w.add_argument("--every-hours", type=int, default=24, dest="every_hours")
+    w.add_argument(
+        "--every-hours",
+        type=int,
+        default=24,
+        dest="every_hours",
+        help="interval for --install (default 24)",
+    )
     w.add_argument("--limit", type=int, default=40, help="how many index entries to consider")
     w.add_argument("--max-add", type=int, default=5, dest="max_add", help="cap per run")
     w.add_argument("--network", action="store_true", help="allow network access (required)")
@@ -2462,13 +2538,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("discover", help="trending models not yet in the catalogue")
     d.add_argument("--network", action="store_true", help="allow network access (required)")
-    d.add_argument("--limit", type=int, default=40)
+    d.add_argument("--limit", type=int, default=40, help="how many index entries to consider")
     d.add_argument("--json", action="store_true", help="machine-readable")
     d.set_defaults(fn=cmd_discover)
 
     u = sub.add_parser("ui", help="launch the local workbench")
     u.add_argument("--host", default="127.0.0.1", help="bind address (loopback by default)")
-    u.add_argument("--port", type=int, default=7171)
+    u.add_argument("--port", type=int, default=7171, help="local port for the page (default 7171)")
     u.add_argument("--no-open", action="store_true", help="don't open a browser")
     u.set_defaults(fn=cmd_ui)
 
@@ -2478,10 +2554,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     ob = sub.add_parser("observe", help="record real traffic through a capture gateway")
     ob.add_argument("--upstream", required=True, help="the provider you use today")
-    ob.add_argument("--port", type=int, default=8787)
+    ob.add_argument(
+        "--port", type=int, default=8787, help="local port to listen on; point your base_url here"
+    )
     ob.add_argument("--candidate", help="a second backend to shadow against")
     ob.add_argument("--capture", help="where the log goes (default: ~/.onpar/captures.log)")
-    ob.add_argument("--no-capture", action="store_true", dest="no_capture")
+    ob.add_argument(
+        "--no-capture",
+        action="store_true",
+        dest="no_capture",
+        help="proxy only; write nothing to disk",
+    )
     ob.set_defaults(fn=cmd_observe)
 
     di = sub.add_parser("distill", help="turn a capture log into an eval set")
@@ -2525,9 +2608,15 @@ def build_parser() -> argparse.ArgumentParser:
             "The eval set will contain unredacted text and must not leave this machine."
         ),
     )
-    di.add_argument("--out", default="evalset.json")
+    di.add_argument("--out", default="evalset.json", help="where to write the eval set")
     di.add_argument("--budget", type=int, default=200, help="total eval items to sample")
-    di.add_argument("--min-per-cluster", type=int, default=3, dest="min_per_cluster")
+    di.add_argument(
+        "--min-per-cluster",
+        type=int,
+        default=3,
+        dest="min_per_cluster",
+        help="fewest items any cluster gets",
+    )
     di.add_argument("--json", action="store_true", help="machine-readable output")
     di.set_defaults(fn=cmd_distill)
 
@@ -2536,11 +2625,14 @@ def build_parser() -> argparse.ArgumentParser:
     dr.set_defaults(fn=cmd_doctor)
 
     le = sub.add_parser("learn", help="LLM inference curriculum grounded in this machine's numbers")
+    from .learn import TRACK_BLURBS
+
+    learn_tracks = tuple(TRACK_BLURBS)
     le.add_argument(
         "track",
         nargs="?",
-        choices=list(["basics", "intermediate"]),
-        help="track to walk (basics or intermediate)",
+        choices=learn_tracks,
+        help=f"track to walk ({', '.join(learn_tracks)})",
     )
     le.add_argument(
         "lesson_n",
@@ -2563,22 +2655,53 @@ def build_parser() -> argparse.ArgumentParser:
 
     mg = sub.add_parser("migrate", help="walk the loop: distill, prove, and what the gate permits")
     mg.add_argument("--candidate", help="the model being evaluated")
-    mg.add_argument("--incumbent", default="incumbent")
-    mg.add_argument("--candidate-endpoint", dest="candidate_endpoint")
-    mg.add_argument("--candidate-model", dest="candidate_model")
-    mg.add_argument("--incumbent-endpoint", dest="incumbent_endpoint")
-    mg.add_argument("--incumbent-model", dest="incumbent_model")
+    mg.add_argument("--incumbent", default="incumbent", help="name of the model being replaced")
+    mg.add_argument(
+        "--candidate-endpoint",
+        dest="candidate_endpoint",
+        help="OpenAI-compatible base URL to collect the candidate's replies from",
+    )
+    mg.add_argument(
+        "--candidate-model",
+        dest="candidate_model",
+        help="model id to ask that endpoint for; defaults to --candidate",
+    )
+    mg.add_argument(
+        "--incumbent-endpoint", dest="incumbent_endpoint", help="same, for the model being replaced"
+    )
+    mg.add_argument(
+        "--incumbent-model",
+        dest="incumbent_model",
+        help="model id to ask that endpoint for; defaults to --incumbent",
+    )
     mg.add_argument("--capture", help="capture log (default: ~/.onpar/captures.log)")
     mg.add_argument("--key", help="capture key (default: ~/.onpar/capture.key)")
     mg.add_argument("--state", help="migration state file (default: ~/.onpar/migration.json)")
-    mg.add_argument("--budget", type=int, default=200)
-    mg.add_argument("--min-per-cluster", type=int, default=3, dest="min_per_cluster")
-    mg.add_argument("--bar", type=float, default=0.9)
+    mg.add_argument("--budget", type=int, default=200, help="total eval items to sample per pass")
+    mg.add_argument(
+        "--min-per-cluster",
+        type=int,
+        default=3,
+        dest="min_per_cluster",
+        help="fewest items any cluster gets",
+    )
+    mg.add_argument(
+        "--bar",
+        type=float,
+        default=0.9,
+        help="equivalence bar; a cluster moves only when the whole interval clears it",
+    )
     _add_collection_flags(mg)
     mg.add_argument("--status", action="store_true", help="where the migration is; runs nothing")
     mg.add_argument("--step", action="store_true", help="run one pass (the default)")
     mg.add_argument("--install", action="store_true", help="print a crontab fragment")
-    mg.add_argument("--every-hours", type=int, default=24, dest="every_hours")
+    mg.add_argument(
+        "--every-hours",
+        type=int,
+        default=24,
+        dest="every_hours",
+        help="interval for --install (default 24)",
+    )
     mg.add_argument("--json", action="store_true", help="machine-readable")
     mg.set_defaults(fn=cmd_migrate)
 
@@ -2591,8 +2714,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="the name the endpoint knows it by, when it differs from the catalogue id",
     )
-    ms.add_argument("--samples", type=int, default=M_DEFAULT_SAMPLES)
-    ms.add_argument("--max-tokens", type=int, default=M_DEFAULT_MAX_TOKENS, dest="max_tokens")
+    ms.add_argument(
+        "--samples",
+        type=int,
+        default=M_DEFAULT_SAMPLES,
+        help="timed requests; the median is reported",
+    )
+    ms.add_argument(
+        "--max-tokens",
+        type=int,
+        default=M_DEFAULT_MAX_TOKENS,
+        dest="max_tokens",
+        help="tokens to generate per request",
+    )
     ms.add_argument(
         "--context", type=_size_arg, default="32k", help="context for the roofline comparison"
     )
@@ -2610,7 +2744,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="quantisation the endpoint actually serves (q4, q8, ...); "
         "without it the roofline assumes the best fit, which may be a different model",
     )
-    ms.add_argument("--concurrency", type=int, default=1)
+    ms.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="concurrency for the roofline estimate; requests are still sent one at a time",
+    )
     ms.add_argument("--out", help="write the measurement as JSON")
     ms.add_argument("--json", action="store_true", help="machine-readable output")
     ms.set_defaults(fn=cmd_measure)
@@ -2639,22 +2778,68 @@ def build_parser() -> argparse.ArgumentParser:
     g.set_defaults(fn=cmd_guard)
 
     ad = sub.add_parser("advise", help="what to change, and where production diverged")
-    ad.add_argument("--context", type=_size_arg, default="32k")
-    ad.add_argument("--concurrency", type=int, default=1)
     ad.add_argument(
-        "--workload", default="interactive", choices=["interactive", "realtime", "batch"]
+        "--context", type=_size_arg, default="32k", help="planned context length, e.g. 32k"
     )
-    ad.add_argument("--ttft-ms", type=int, dest="ttft_ms")
-    ad.add_argument("--itl-ms", type=int, dest="itl_ms")
-    ad.add_argument("--prefix-sharing", type=float, default=0.0, dest="prefix_sharing")
-    ad.add_argument("--structured-output", action="store_true", dest="structured_output")
-    ad.add_argument("--tool-calling", action="store_true", dest="tool_calling")
+    ad.add_argument("--concurrency", type=int, default=1, help="planned requests in flight")
+    ad.add_argument(
+        "--workload",
+        default="interactive",
+        choices=["interactive", "realtime", "batch"],
+        help="what the latency budget is for",
+    )
+    ad.add_argument("--ttft-ms", type=int, dest="ttft_ms", help="time-to-first-token budget, in ms")
+    ad.add_argument("--itl-ms", type=int, dest="itl_ms", help="inter-token latency budget, in ms")
+    ad.add_argument(
+        "--prefix-sharing",
+        type=float,
+        default=0.0,
+        dest="prefix_sharing",
+        help="share of prompt tokens that repeat a prefix, 0 to 1, as planned",
+    )
+    ad.add_argument(
+        "--structured-output",
+        action="store_true",
+        dest="structured_output",
+        help="the plan under review serves requests that carry response_format",
+    )
+    ad.add_argument(
+        "--tool-calling",
+        action="store_true",
+        dest="tool_calling",
+        help="the plan under review serves requests that offer tools",
+    )
     # Observed reality — any subset. Telemetry arrives in pieces.
-    ad.add_argument("--seen-concurrency", type=int, dest="seen_concurrency")
-    ad.add_argument("--seen-prefix-sharing", type=float, dest="seen_prefix_sharing")
-    ad.add_argument("--seen-ttft-ms", type=int, dest="seen_ttft_ms")
-    ad.add_argument("--seen-peak-context", type=_size_arg, dest="seen_peak_context")
-    ad.add_argument("--seen-kv-utilisation", type=float, dest="seen_kv_utilisation")
+    ad.add_argument(
+        "--seen-concurrency",
+        type=int,
+        dest="seen_concurrency",
+        help="peak concurrency production showed",
+    )
+    ad.add_argument(
+        "--seen-prefix-sharing",
+        type=float,
+        dest="seen_prefix_sharing",
+        help="prefix sharing production showed, 0 to 1",
+    )
+    ad.add_argument(
+        "--seen-ttft-ms",
+        type=int,
+        dest="seen_ttft_ms",
+        help="time to first token production showed, in ms",
+    )
+    ad.add_argument(
+        "--seen-peak-context",
+        type=_size_arg,
+        dest="seen_peak_context",
+        help="longest context production showed, e.g. 48k",
+    )
+    ad.add_argument(
+        "--seen-kv-utilisation",
+        type=float,
+        dest="seen_kv_utilisation",
+        help="peak KV cache fill production showed, 0 to 1; above 0.9 is flagged",
+    )
     ad.add_argument("--json", action="store_true", help="machine-readable output")
     ad.set_defaults(fn=cmd_advise)
 
@@ -2808,7 +2993,12 @@ def build_parser() -> argparse.ArgumentParser:
     br.set_defaults(fn=cmd_brief)
 
     d = sub.add_parser("desktop", help="install a double-clickable launcher")
-    d.add_argument("--port", type=int, default=7171)
+    d.add_argument(
+        "--port",
+        type=int,
+        default=7171,
+        help="port the launcher opens `onpar ui` on (default 7171)",
+    )
     d.set_defaults(fn=cmd_desktop)
 
     kn = sub.add_parser("kernel", help="scaffold a vLLM plugin and its proof plan")
@@ -2827,6 +3017,42 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+#: The loop commands a person reads at a terminal. Styled on a TTY only; every
+#: other command, and every `--json`, keeps writing exactly what it always did.
+_STYLED = frozenset(
+    {
+        "fit",
+        "where",
+        "advise",
+        "build",
+        "run",
+        "models",
+        "observe",
+        "distill",
+        "doctor",
+        "learn",
+        "migrate",
+        "measure",
+        "guard",
+        "prove",
+        "receipt",
+        "catalog-sources",
+    }
+)
+
+
+def _styled(p: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """Run the command, through `term.styled_stdout` when it is a loop command
+    and stdout is a TTY. Off a TTY this is exactly `args.fn(args)`."""
+    cmd = args.cmd
+    if cmd not in _STYLED or getattr(args, "json", False) or not term.out.on:
+        return args.fn(args)
+    sub = next(a for a in p._actions if isinstance(a, argparse._SubParsersAction))
+    purpose = next((a.help or "" for a in sub._choices_actions if a.dest == cmd), "")
+    with term.styled_stdout(cmd, purpose):
+        return args.fn(args)
+
+
 def main(argv: list[str] | None = None) -> int:
     from .events import configure
 
@@ -2840,7 +3066,7 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "cmd", None) is None:
         return _converse(p)
     try:
-        return args.fn(args)
+        return _styled(p, args)
     # RuntimeError included: `desktop.install()` documents and raises it on any
     # unsupported platform, and it was not in this tuple — so `onpar desktop`
     # on Linux printed a traceback, breaking the convention stated two lines

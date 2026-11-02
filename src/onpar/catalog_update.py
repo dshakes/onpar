@@ -114,12 +114,12 @@ def parse_config(cfg: dict[str, Any]) -> Architecture:
 
     # MLA (DeepSeek family) is identified by its compressed KV rank. It must be
     # detected explicitly: sizing an MLA model with the GQA formula overestimates
-    # KV by ~50x, which is the difference between "fits" and "buy another node".
+    # KV by ~64x, which is the difference between "fits" and "buy another node".
     # Aliases, like every other field here — and then a guard, because this one
     # is not just a field. The next line makes the rank the SOLE detector of
     # MLA, so a rank that fails to parse does not merely go missing: the model
     # stops being MLA and is sized with the GQA formula, which overestimates KV
-    # by ~50x. CLAUDE.md's invariant ("any entry with kv_scheme: mla must set
+    # by ~64x. CLAUDE.md's invariant ("any entry with kv_scheme: mla must set
     # kv_lora_rank") is enforced by a test over entries that ARE mla — and an
     # entry that never becomes mla walks around it.
     #
@@ -140,13 +140,13 @@ def parse_config(cfg: dict[str, Any]) -> Architecture:
     # `[]` turned `{"architectures": 7, "model_type": "deepseek_v3"}` from a
     # `TypeError` into a silent pass, sized as MHA — and a config carrying only
     # `model_type` was never caught at all, before or after. The whole point of
-    # this refusal is that missing it overestimates KV by ~50x.
+    # this refusal is that missing it overestimates KV by ~64x.
     arch = " ".join([*(str(a) for a in families), str(cfg.get("model_type", ""))]).lower()
     if not kv_lora_rank and (mla_signals or "deepseek" in arch):
         raise ConfigError(
             f"this config looks like an MLA model "
             f"({', '.join(mla_signals) or arch}) but no kv_lora_rank could be "
-            f"read from it. Sizing it as GQA would overestimate KV by ~50x, so "
+            f"read from it. Sizing it as GQA would overestimate KV by ~64x, so "
             f"it is refused rather than guessed — add the rank by hand."
         )
     scheme = "mla" if kv_lora_rank else ("gqa" if kv_heads < (attn_heads or kv_heads) else "mha")
@@ -511,7 +511,7 @@ def demo() -> None:
     assert mha.kv_heads == 64 and mha.kv_scheme == "mha"
 
     # MLA must be detected from its rank, not guessed — the GQA formula would
-    # overestimate KV by ~50x.
+    # overestimate KV by ~64x.
     deepseek = parse_config({**qwen, "kv_lora_rank": 512, "num_hidden_layers": 61})
     assert deepseek.kv_scheme == "mla" and deepseek.kv_lora_rank == 512
 

@@ -549,3 +549,49 @@ def test_an_upstream_error_capture_is_dropped_from_the_eval_set_and_said_so():
     assert any(i["baseline_tool_calls"] for i in doc["items"])
     with pytest.raises(ValueError, match="every one of the 1 captures"):
         distill([bad], budget=10, min_per_cluster=1)
+
+
+def test_the_distill_hint_plans_for_structured_output_when_the_corpus_asked_for_it():
+    """The real proof on 2026-11-02 lost a whole JSON cluster to an engine with no
+    constrained decoding, and nothing had said so beforehand. The session report
+    now carries the count of captures that asked for a response format and puts
+    `--structured-output` in the plan hint, with and without a prefix hint."""
+    from onpar.distill.trajectory import SessionReport
+
+    with_prefix = SessionReport(
+        captures=100,
+        sessions=20,
+        multi_step=10,
+        longest=3,
+        tool_captures=5,
+        prompt_tokens=10_000,
+        shared_prefix_tokens=6_000,
+        multi_step_captures=30,
+        structured_captures=40,
+    )
+    hint = "\n".join(with_prefix.render())
+    assert "--structured-output" in hint and "NOT EXPRESSED" in hint
+
+    no_sessions = SessionReport(
+        captures=40,
+        sessions=40,
+        multi_step=0,
+        longest=1,
+        tool_captures=0,
+        prompt_tokens=0,
+        shared_prefix_tokens=0,
+        structured_captures=40,
+    )
+    lines = no_sessions.render()
+    assert len(lines) == 1 and "onpar build --structured-output" in lines[0]
+
+    plain = SessionReport(
+        captures=40,
+        sessions=40,
+        multi_step=0,
+        longest=1,
+        tool_captures=0,
+        prompt_tokens=0,
+        shared_prefix_tokens=0,
+    )
+    assert plain.render() == []

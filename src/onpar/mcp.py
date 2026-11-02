@@ -314,6 +314,17 @@ def _prove(
         raise ValueError(f"{eval_set} contains no eval items")
 
     items = [EvalItem.from_row(r, i) for i, r in enumerate(rows)]
+    # The same refusal `onpar prove` and `onpar migrate` make. `onpar distill`
+    # writes a set whose candidate column is blank on purpose; grading it scores
+    # 0% with the confidence of a real result. This tool collects nothing, so a
+    # blank set is a refusal, never a verdict.
+    if not any(i.candidate for i in items):
+        raise ValueError(
+            f"{eval_set}: every candidate answer is blank, so there is nothing to grade. "
+            "Collect the candidate's replies first (`onpar prove <set> --candidate-endpoint "
+            "<url>`), then prove the filled file. Grading it as-is would report 0% and read "
+            "as a verdict."
+        )
     equal_weighted = not shares
     if equal_weighted:
         keys = sorted({i.cluster for i in items})
@@ -846,19 +857,24 @@ TOOLS: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {
         _learn,
         {
             "description": (
-                "LLM inference curriculum grounded in this machine's solver numbers. "
+                "LLM inference curriculum grounded in this machine's numbers. "
                 "Returns lesson text, figures, questions and derived answers. "
-                "Every figure comes from solve() for the hardware here — no generic prose. "
+                "Every figure comes from onpar's own code (solver, planner, engine "
+                "adapters, host survey, cutover gate) for the hardware here, or for a "
+                "named hardware profile where a lesson compares machines. "
                 "Read-only; nothing is configured or started."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "track": {
-                        "enum": ["basics", "intermediate", ""],
+                        "enum": ["basics", "intermediate", "hardware", "serving", "hosting", ""],
                         "description": (
                             "Track to return. Omit (or '') for all lessons. "
-                            "'basics' for anyone; 'intermediate' for engineers."
+                            "'basics' for anyone; 'intermediate' for engineers; "
+                            "'hardware' for choosing a machine; 'serving' for choosing "
+                            "an engine and its settings; 'hosting' for deciding where "
+                            "it runs and how traffic cuts over."
                         ),
                     },
                     "lesson": {
@@ -1010,19 +1026,29 @@ def _kind(text: str) -> tuple[str, str] | None:
     return None
 
 
-def resources() -> list[dict[str, Any]]:
-    """Receipts and eval sets under the eval root.
+def resources(cursor: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    """One page of receipts and eval sets under the eval root, and the cursor
+    for the next page, or None when this was the last.
 
     Sorted, so two listings of an unchanged directory are identical — an agent
-    diffing them should see nothing rather than a reshuffle.
+    diffing them should see nothing rather than a reshuffle. Paged with the
+    MCP `nextCursor` contract rather than silently cut at LIST_LIMIT: the cap
+    used to just `break`, so a root with 201 receipts listed 200 and said
+    nothing, which is how an agent concludes a receipt does not exist. The
+    cursor is the last URI served; a cursor naming nothing restarts the list.
     """
     root = eval_root()
     out: list[dict[str, Any]] = []
     if not root.is_dir():
-        return out
-    for path in sorted(root.rglob("*.json")):
+        return out, None
+    paths = sorted(root.rglob("*.json"))
+    if cursor:
+        after = [i for i, pth in enumerate(paths) if _safe_uri(pth) == cursor]
+        paths = paths[after[0] + 1 :] if after else paths
+    last_uri: str | None = None
+    for path in paths:
         if len(out) >= LIST_LIMIT:
-            break
+            return out, last_uri
         try:
             # Resolved through the same guard as a read, so a symlinked file
             # cannot be *listed* from outside the root either — a listing is
@@ -1034,15 +1060,24 @@ def resources() -> list[dict[str, Any]]:
         kind = _kind(text)
         if kind is None:
             continue
+        last_uri = _uri(resolved)
         out.append(
             {
-                "uri": _uri(resolved),
+                "uri": last_uri,
                 "name": path.name,
                 "description": f"onpar {kind[0]} — {kind[1]}",
                 "mimeType": "application/json",
             }
         )
-    return out
+    return out, None
+
+
+def _safe_uri(path: pathlib.Path) -> str | None:
+    """`_uri` for a path that may sit outside the root (then None)."""
+    try:
+        return _uri(_within_eval_root(str(path)))
+    except (ValueError, OSError):
+        return None
 
 
 def read_resource(uri: str) -> dict[str, Any]:
@@ -1194,7 +1229,9 @@ def handle(request: dict[str, Any]) -> dict[str, Any] | None:
         )
 
     if method == "resources/list":
-        return ok({"resources": resources()})
+        cursor = (request.get("params") or {}).get("cursor")
+        page, nxt = resources(cursor if isinstance(cursor, str) else None)
+        return ok({"resources": page, **({"nextCursor": nxt} if nxt else {})})
 
     if method == "resources/read":
         uri = (request.get("params") or {}).get("uri", "")

@@ -19,7 +19,7 @@ Full picture: [README](README.md) · [PRD](docs/20-prd.md) · [architecture](doc
 
 ```bash
 cargo test && cargo clippy --all-targets && cargo fmt --check   # Rust gate (297 tests)
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # Python gate (2234 tests)
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # Python gate (2475 tests)
 uv run --with ruff   --python 3.13 ruff check src tests
 uv run --with ruff   --python 3.13 ruff format src tests
 python3 tools/release_preflight.py                     # before tagging a release
@@ -62,7 +62,7 @@ The solver is the auditable core; these errors are all common in the wild:
 - **MoE**: weights need **total** params resident. Sparsity cuts compute, not memory.
 - **GQA**: use `kv_heads`, not attention heads — up to 8× overestimate otherwise.
 - **MLA** (DeepSeek family): stores a compressed `kv_lora_rank` latent. Using the GQA
-  formula overestimates KV by ~50×.
+  formula overestimates KV by ~64×.
 
 Any new catalog entry with `kv_scheme: mla` **must** set `kv_lora_rank` — enforced by a test.
 
@@ -82,7 +82,8 @@ trades a defect for its mirror image.
 ## Conventions
 - **Errors:** raise with the offending value in the message; CLI catches and returns
   a nonzero exit code, never a traceback. **Which** nonzero matters: `1` means the
-  call was well-formed and the world did not cooperate (retry or report), `2` means
+  call was well-formed and either the world did not cooperate (retry or report) or
+  the answer is no (a model that does not fit, a receipt that no longer holds), `2` means
   the invocation itself was wrong (fix it, do not retry). Everything used to be `2`,
   so an agent could not tell those apart.
 - **Tests:** every module carries an assert-based `demo()` self-check runnable via

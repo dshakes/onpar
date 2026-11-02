@@ -45,3 +45,7 @@ uv.lock
 site/src/content/docs/docs/
 site/node_modules/
 site/.astro/
+
+# story artifacts from tools/story_run.sh (the owner's eval set and receipt)
+/evalset.json
+/receipt.json

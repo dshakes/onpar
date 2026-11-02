@@ -2112,3 +2112,62 @@ def test_every_internal_anchor_on_the_site_resolves(page):
         elif href.startswith("lab/#") and href[5:] not in docs_ids:
             dead.append(href)
     assert not dead, f"{page}: links to anchors that do not exist: {sorted(set(dead))}"
+
+
+def test_the_generated_cli_reference_is_current():
+    """docs/guide/reference/cli.md is written by tools/cli_reference.py from the
+    parser. A verb or flag added to the CLI without regenerating the page
+    fails here, which is cheaper than a reader finding the gap."""
+    root = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [sys.executable, "tools/cli_reference.py", "--check"],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+
+
+def test_every_published_knob_count_matches_the_planner():
+    """ "Twelve knobs" was on twenty-two surfaces the day the planner gained a
+    thirteenth. The prose count is pinned to `len(Setting)`, in words or digits,
+    the way the lesson counts are pinned to the curriculum."""
+    from onpar.engines import Setting
+
+    root = Path(__file__).resolve().parents[1]
+    words = {"ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15}
+    surfaces = (
+        [root / "README.md", root / "site/index.html", root / "site/lab/index.html"]
+        + sorted((root / "docs").glob("*.md"))
+        + sorted((root / "docs/guide").rglob("*.md"))
+        + [root / "tools/diagrams.py"]
+    )
+    wrong = []
+    for path in surfaces:
+        if not path.exists():
+            continue
+        for m in re.finditer(r"\b([a-z]+|\d+) (?:planner )?knobs\b", path.read_text(), re.I):
+            token = m.group(1).lower()
+            n = words.get(token) or (int(token) if token.isdigit() else None)
+            if n is not None and n != len(Setting):
+                wrong.append(f"{path.relative_to(root)}: {m.group(0)!r}")
+    assert not wrong, f"the planner has {len(Setting)} knobs; these surfaces say otherwise: {wrong}"
+
+
+def test_the_published_diagram_count_matches_the_generator():
+    """The landing page's stat said "9 diagrams" from the day it was written;
+    tools/diagrams.py writes many more. The number is the generator's."""
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "tools/diagrams.py").read_text()
+    names = {
+        n
+        for n in re.findall(r'save\(\s*"([\w-]+\.svg)"', src)
+        if (root / "docs/assets" / n).exists()
+    }
+    html = (root / "site/index.html").read_text()
+    m = re.search(r'<div class="n">(\d+)</div><div class="l">diagrams', html)
+    assert m, "the landing page no longer publishes a diagram count"
+    assert int(m.group(1)) == len(names), (
+        f"landing says {m.group(1)} diagrams; the generator writes {len(names)} into docs/assets"
+    )

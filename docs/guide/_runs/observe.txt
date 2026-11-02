@@ -1,0 +1,9 @@
+$ onpar observe --upstream https://api.openai.com/v1 --port 8788
+
+  In your request path from now until Ctrl-C, and not after (ADR-0015).
+  capture   ~/.onpar/captures.log (key: ~/.onpar/capture.key)
+  upstream  https://api.openai.com/v1
+  listening http://127.0.0.1:8788
+  point your base_url at http://127.0.0.1:8788/v1 and nothing else changes.
+
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0 (pasted from the owner's terminal; the runner cannot record a foreground process)

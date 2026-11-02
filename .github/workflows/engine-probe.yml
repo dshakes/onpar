@@ -1,0 +1,121 @@
+# Serve a real small model with a real engine and probe the three behaviours a
+# proof depends on: the model answers (thinking does not eat the budget), a
+# requested JSON format is enforced or reported as not enforced, and a tool
+# call comes back as a call. Unit tests with stub servers cannot see any of
+# these; two of them reached a real run on 2026-11-02 before anyone did.
+#
+# A 4B model, not 0.6B: the first run showed a 0.6B model never calls a tool and
+# thinks out loud in its reply, which tests the model, not the engine.
+# Two engines on the same macOS runner: MLX (what `onpar run` picks on Apple
+# silicon) and llama.cpp. Each job states which probes must pass on that
+# engine; the others print as warnings so a change in engine behaviour is
+# visible in the log rather than silently absorbed.
+name: engine probe
+
+on:
+  pull_request:
+    paths:
+      - "src/onpar/engines.py"
+      - "src/onpar/plan.py"
+      - "src/onpar/run.py"
+      - "src/onpar/prove/**"
+      - "tools/engine_probe.py"
+      - ".github/workflows/engine-probe.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/onpar/engines.py"
+      - "src/onpar/plan.py"
+      - "src/onpar/prove/**"
+      - "tools/engine_probe.py"
+      - ".github/workflows/engine-probe.yml"
+  schedule:
+    - cron: "41 6 * * 1"   # Mondays 06:41 UTC: engines move under us
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  mlx:
+    name: mlx_lm.server · Qwen3-4B-4bit
+    runs-on: macos-latest   # arm64, Metal
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the engine
+        run: uv tool install mlx-lm
+      - name: Serve with thinking off (what onpar run emits for a reasoning model)
+        run: |
+          set -euo pipefail
+          nohup mlx_lm.server --model mlx-community/Qwen3-4B-4bit --host 127.0.0.1 --port 8000 \
+            --chat-template-args '{"enable_thinking":false}' > mlx.log 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8000/v1/models >/dev/null && break
+            sleep 5
+          done
+          curl -sf http://127.0.0.1:8000/v1/models >/dev/null || { cat mlx.log; exit 1; }
+      - name: Warm up (the first completion loads and compiles; it is not the measurement)
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 20); do
+            if curl -sf --max-time 600 http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/json' \
+                 -d '{"model":"mlx-community/Qwen3-4B-4bit","messages":[{"role":"user","content":"hi"}],"max_tokens":1}' >/dev/null; then
+              echo "warm"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::the server never answered a one-token completion"; exit 1
+      - name: Probe
+        # MLX has no constrained decoding: json is expected to report "not enforced",
+        # and the planner lists structured_output under NOT EXPRESSED for it.
+        run: |
+          set -euo pipefail
+          python3 tools/engine_probe.py --endpoint http://127.0.0.1:8000/v1 \
+            --model mlx-community/Qwen3-4B-4bit --timeout 600 --expect answers,tool-call | tee probe.txt
+          grep -q "json .*not enforced" probe.txt
+      - if: failure()
+        run: tail -50 mlx.log
+
+  llama-cpp:
+    name: llama-server · Qwen3-4B Q4_K_M
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the engine
+        run: brew install llama.cpp
+      - name: Serve with the jinja template (tool calls) and no reasoning budget
+        run: |
+          set -euo pipefail
+          # -fa off: the runner's build logged flash attention falling back to CPU per
+          # layer, and every grammar-constrained request (json_object, tool call) then
+          # hung past 600 s while plain generation answered in 2 tokens.
+          # -ngl 0: still hung with -fa off, so the GPU path on this runner is suspect; CPU is slow but finishes.
+          nohup llama-server -hf unsloth/Qwen3-4B-GGUF:Q4_K_M --jinja --reasoning-format deepseek -fa off -ngl 0 -t 4 \
+            --chat-template-kwargs '{"enable_thinking":false}' --reasoning-budget 0 \
+            --host 127.0.0.1 --port 8080 > llama.log 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8080/v1/models >/dev/null && break
+            sleep 5
+          done
+          curl -sf http://127.0.0.1:8080/v1/models >/dev/null || { cat llama.log; exit 1; }
+      - name: Warm up (the first completion loads and compiles; it is not the measurement)
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 20); do
+            if curl -sf --max-time 600 http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' \
+                 -d '{"model":"unsloth/Qwen3-4B-GGUF:Q4_K_M","messages":[{"role":"user","content":"hi"}],"max_tokens":1}' >/dev/null; then
+              echo "warm"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::the server never answered a one-token completion"; exit 1
+      - name: Probe
+        # Whether llama-server enforces json_object varies by build (a local build
+        # 10210 did not; a brew build did), so json is reported, not required.
+        # The answer and the structured tool call are what this engine must do.
+        run: python3 tools/engine_probe.py --endpoint http://127.0.0.1:8080/v1 --timeout 600 --expect answers,tool-call
+      - if: failure()
+        run: tail -50 llama.log

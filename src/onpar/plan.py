@@ -48,7 +48,7 @@ from enum import StrEnum
 
 from onpar.catalog import ModelSpec
 from onpar.engines import MTP_NATIVE, LoraFleet, Setting
-from onpar.fit import Fit, solve
+from onpar.fit import Fit, best_quant, quant_preference, solve
 from onpar.hardware import Hardware
 
 __all__ = [
@@ -177,6 +177,11 @@ class Requirements:
     #: which the eval suite flags as tool-leak. Parser selection is family-
     #: specific; the adapter maps the model repo to the verified flag name.
     tool_calling: bool = False
+    #: Keep a reasoning model's thinking phase on. Off by default because a
+    #: model that thinks first can spend a whole `max_tokens` budget before it
+    #: answers, and an empty answer grades as a wrong one. Ignored for models
+    #: the catalogue does not mark `reasoning`: there is nothing to turn off.
+    thinking: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -655,6 +660,30 @@ def _tool_calling(req: Requirements, model: ModelSpec | None) -> Knob | None:
     )
 
 
+def _thinking(req: Requirements, model: ModelSpec | None) -> Knob | None:
+    """Thinking off for reasoning models, unless the caller kept it on.
+
+    Absent for every other model: a knob there would ask engines to switch off
+    something the chat template never switches on.
+    """
+    if model is None or not getattr(model, "reasoning", False):
+        return None
+    if req.thinking:
+        return Knob(
+            Setting.THINKING,
+            True,
+            "thinking kept on, as asked. Replies open with a reasoning phase; "
+            "max_tokens has to cover it as well as the answer.",
+        )
+    return Knob(
+        Setting.THINKING,
+        False,
+        f"{model.id}'s chat template thinks before answering by default, and a "
+        f"short max_tokens is spent on reasoning with no answer left. Off; "
+        f"--thinking keeps it on.",
+    )
+
+
 def _budget_warnings(req: Requirements, fit: Fit | None) -> tuple[str, ...]:
     """Requirements the hardware cannot meet, stated rather than configured around.
 
@@ -771,11 +800,19 @@ def plan(
         that cannot meet the requirement still emits its reasoning, and saying
         so is the point.
     """
-    fit = (
-        solve(model, quant or model.quants[0], hw, req.context, req.concurrency)
-        if model is not None
-        else None
-    )
+    # No quant named means "whatever fits best", not "the first one listed":
+    # the Kubernetes operator passes none, and sizing at the catalogue's first
+    # entry (often fp16) refused a 70B model on an H100 that runs it at q4.
+    # When nothing fits, size at the smallest quant so the refusal is about the
+    # model's best chance, not its worst.
+    if model is None:
+        fit = None
+    elif quant is not None:
+        fit = solve(model, quant, hw, req.context, req.concurrency)
+    else:
+        fit = best_quant(model, hw, req.context, req.concurrency) or solve(
+            model, quant_preference(model.quants)[-1], hw, req.context, req.concurrency
+        )
     if force_engine is not None:
         engine, why = force_engine, f"{force_engine.value} was explicitly requested"
     else:
@@ -803,6 +840,8 @@ def plan(
         knobs.append(sd)
     if (tc := _tool_calling(req, model)) is not None:
         knobs.append(tc)
+    if (th := _thinking(req, model)) is not None:
+        knobs.append(th)
     if (lora := _lora(req)) is not None:
         knobs.append(lora)
     if model is not None and quant:
@@ -916,6 +955,18 @@ def demo() -> None:
     # Without a model, the memory knob admits it is a guess rather than deriving.
     mem = plan(h100, Requirements(Workload.BATCH)).get(Setting.MEMORY_FRACTION)
     assert mem.value == 0.92 and "without knowing the model" in mem.why, mem
+
+    # A reasoning model gets thinking off unless kept on; any other model gets
+    # no thinking knob at all, since there is nothing to switch off.
+    from onpar import catalog
+
+    qwen, llama = catalog.get("qwen3-30b-a3b"), catalog.get("llama-3.1-8b")
+    chat = Requirements(Workload.INTERACTIVE, concurrency=8)
+    assert plan(mac, chat, qwen, "q8").get(Setting.THINKING).value is False
+    kept = replace(chat, thinking=True)
+    assert plan(mac, kept, qwen, "q8").get(Setting.THINKING).value is True
+    assert plan(mac, kept, llama, "q8").get(Setting.THINKING) is None
+    assert "--chat-template-args" in plan(mac, chat, qwen, "q8").command(qwen.id)[0]
 
     # Every knob carries its reasoning. A number you cannot argue with is a
     # number you cannot fix.
