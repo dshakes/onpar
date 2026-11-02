@@ -69,8 +69,8 @@ SPLIT_SURFACES: tuple[tuple[str, str, str], ...] = (
     # sixth time. Neither was registered here, so the site stat's "2529 tests
     # ... 2230 Python, 297 Rust" summed to 2527 — a mismatch invisible to a
     # reader skimming either number alone, and invisible to `--write` too.
-    ("site/index.html", "python", r'(tests · )(\d[\d,]*)( Python, )'),
-    ("site/index.html", "rust", r'( Python, )(\d[\d,]*)( Rust</div>)'),
+    ("site/index.html", "python", r"(tests · )(\d[\d,]*)( Python, )"),
+    ("site/index.html", "rust", r"( Python, )(\d[\d,]*)( Rust</div>)"),
     ("docs/60-pitch.md", "python", r"(\()(\d[\d,]*)( Python, )"),
     ("docs/60-pitch.md", "rust", r"( Python, )(\d[\d,]*)( Rust\))"),
 )

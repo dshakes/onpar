@@ -73,10 +73,10 @@ SURFACES: tuple[tuple[str, str, str], ...] = (
     ("site/index.html", "uvx pin", rf"(uvx --from onpar==)({_V})( onpar fit)"),
     ("site/index.html", "npx pin", rf"(npx onpar-cli@)({_V})( fit)"),
     ("site/index.html", "npx note", rf"(runs onpar==)({_V})( exactly)"),
-    ("site/docs/index.html", "uvx pin", rf"(uvx --from onpar==)({_V})( onpar fit)"),
-    ("site/docs/index.html", "npx pin", rf"(npx onpar-cli@)({_V})( fit)"),
-    ("site/docs/index.html", "npx note", rf"(<code>npx onpar-cli@)({_V})(</code> runs)"),
-    ("site/docs/index.html", "runs-exactly", rf"(<code>onpar</code> )({_V})( and nothing)"),
+    ("site/lab/index.html", "uvx pin", rf"(uvx --from onpar==)({_V})( onpar fit)"),
+    ("site/lab/index.html", "npx pin", rf"(npx onpar-cli@)({_V})( fit)"),
+    ("site/lab/index.html", "npx note", rf"(<code>npx onpar-cli@)({_V})(</code> runs)"),
+    ("site/lab/index.html", "runs-exactly", rf"(<code>onpar</code> )({_V})( and nothing)"),
 )
 
 #: Occurrences that must NOT move, asserted so a future pattern cannot start

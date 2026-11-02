@@ -23,7 +23,7 @@ import pytest
 
 from onpar import catalog
 
-PAGE = Path(__file__).resolve().parents[1] / "site" / "docs" / "index.html"
+PAGE = Path(__file__).resolve().parents[1] / "site" / "lab" / "index.html"
 GB = 1024**3
 
 
@@ -328,7 +328,7 @@ def test_animated_diagrams_are_inlined_not_referenced_with_img():
     offenders = []
     for page in (
         Path(__file__).resolve().parents[1] / "site" / "index.html",
-        Path(__file__).resolve().parents[1] / "site" / "docs" / "index.html",
+        Path(__file__).resolve().parents[1] / "site" / "lab" / "index.html",
     ):
         # Strip <noscript> blocks: a static <img> in there is the correct fallback.
         live = re.sub(r"<noscript>.*?</noscript>", "", page.read_text(), flags=re.S)
@@ -346,7 +346,7 @@ def test_animated_diagrams_are_inlined_not_referenced_with_img():
 # --- diagrams must not be stretched out of proportion --------------------------
 
 SITE = Path(__file__).resolve().parents[1] / "site"
-PAGES = (SITE / "index.html", SITE / "docs" / "index.html")
+PAGES = (SITE / "index.html", SITE / "lab" / "index.html")
 
 
 def figure_media_rules(css: str) -> list[tuple[str, str]]:
@@ -629,7 +629,7 @@ def _cli_commands() -> set[str]:
 
 
 @pytest.mark.parametrize(
-    "page", [Path("site/docs/index.html"), Path("site/index.html"), Path("README.md")]
+    "page", [Path("site/lab/index.html"), Path("site/index.html"), Path("README.md")]
 )
 def test_every_command_the_docs_tell_you_to_run_exists(page):
     """A `$ onpar X` in a code block is an instruction, not prose.
@@ -692,7 +692,7 @@ PUBLISHED_BY_REGISTRY: dict[str, frozenset[str]] = {
 INSTALL_SURFACES = (
     Path("README.md"),
     Path("site/index.html"),
-    Path("site/docs/index.html"),
+    Path("site/lab/index.html"),
     Path("install.sh"),
     # The one the curl URL actually serves. It was a stale copy of install.sh
     # and kept every unpublished command after install.sh was fixed — so the
@@ -1186,7 +1186,7 @@ def test_no_published_surface_names_an_engine_onpar_cannot_launch():
         list((root / "docs").rglob("*.md"))
         + list((root / "docs" / "assets").glob("*.svg"))
         + list((root / "site").rglob("*.svg"))
-        + [root / "site" / "index.html", root / "site" / "docs" / "index.html", root / "README.md"]
+        + [root / "site" / "index.html", root / "site" / "lab" / "index.html", root / "README.md"]
         # The skills too. The reviewer found `vllm-mlx` alive in
         # `.claude/skills/onpar/SKILL.md` after this PR had corrected the
         # diagrams, the docs and the site — the same defect surviving in the one
@@ -1299,7 +1299,7 @@ def test_every_published_throughput_figure_matches_a_real_solve():
     # Contexts are the CLI defaults the transcripts were taken at (32k).
     transcripts = [
         ("README.md", "llama-3.1-8b", "q4", 32_768, 1),
-        ("site/docs/index.html", "qwen3-30b-a3b", "q8", 32_768, 1),
+        ("site/lab/index.html", "qwen3-30b-a3b", "q8", 32_768, 1),
         ("site/index.html", "qwen3-30b-a3b", "q8", 32_768, 8),
         ("site/index.html", "phi-4-14b", "q8", 32_768, 8),
     ]
@@ -2007,7 +2007,7 @@ def test_fit_explorer_rows_match_solver(profile_id, ctx, conc, model_id, explore
 def _cli_reference() -> str:
     """The `<pre>` under the docs site's `CLI reference` heading, tags stripped."""
     root = Path(__file__).resolve().parents[1]
-    html = (root / "site/docs/index.html").read_text()
+    html = (root / "site/lab/index.html").read_text()
     m = re.search(r'<h2 id="cli">.*?<pre>(.*?)</pre>', html, re.S)
     assert m, "docs site lost its CLI reference"
     return re.sub(r"<[^>]+>", "", m.group(1))
@@ -2067,20 +2067,20 @@ def test_the_previous_product_name_appears_nowhere():
     assert not hits, f"the previous product name still appears in: {hits}"
 
 
-@pytest.mark.parametrize("page", [Path("site/index.html"), Path("site/docs/index.html")])
+@pytest.mark.parametrize("page", [Path("site/index.html"), Path("site/lab/index.html")])
 def test_every_internal_anchor_on_the_site_resolves(page):
     """A nav link to a section that moved is a dead end on the one page that is
     meant to sell the product. `#foo` must name an id on the same page, and
-    `docs/#foo` from the landing page must name an id on the docs page."""
+    `lab/#foo` from the landing page must name an id on the lab page."""
     root = Path(__file__).resolve().parents[1]
     html = (root / page).read_text()
     ids = set(re.findall(r'\bid="([^"]+)"', html))
-    docs_ids = set(re.findall(r'\bid="([^"]+)"', (root / "site/docs/index.html").read_text()))
+    docs_ids = set(re.findall(r'\bid="([^"]+)"', (root / "site/lab/index.html").read_text()))
     dead = []
     for href in re.findall(r'href="([^"]+)"', html):
         if href.startswith("#"):
             if href[1:] not in ids:
                 dead.append(href)
-        elif href.startswith("docs/#") and href[6:] not in docs_ids:
+        elif href.startswith("lab/#") and href[5:] not in docs_ids:
             dead.append(href)
     assert not dead, f"{page}: links to anchors that do not exist: {sorted(set(dead))}"
