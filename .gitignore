@@ -39,3 +39,9 @@ uv.lock
 # never commit local secrets
 .env
 .env.*
+
+# Starlight docs site: the synced content is build output of site/scripts/sync-docs.mjs
+# (docs/*.md is the source of truth). site/dist is covered by dist/ above.
+site/src/content/docs/docs/
+site/node_modules/
+site/.astro/

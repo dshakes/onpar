@@ -1,0 +1,38 @@
+/* Starlight theme mapped onto the landing page's colour tokens (site/index.html :root),
+   so the docs and the landing read as one site. Dark is the default theme. */
+:root,
+::backdrop {
+	--sl-color-accent-low: #0c2a2a;
+	--sl-color-accent: #186b64; /* --candidate-dim */
+	--sl-color-accent-high: #2fd4c4; /* --candidate */
+	--sl-color-white: #e9f4f8; /* --ink */
+	--sl-color-gray-1: #e9f4f8;
+	--sl-color-gray-2: #93aab8; /* --ink2 */
+	--sl-color-gray-3: #93aab8;
+	--sl-color-gray-4: #5b7385; /* --ink3 */
+	--sl-color-gray-5: #1e3546; /* --line2 */
+	--sl-color-gray-6: #0b1620; /* --panel */
+	--sl-color-black: #050a0f; /* --void */
+	--sl-color-bg-nav: #08111a; /* --deep */
+	--sl-color-bg-sidebar: #08111a;
+	--sl-color-hairline-light: #1e3546;
+	--sl-color-hairline: #152633; /* --line */
+	--sl-color-orange: #f0a340; /* --incumbent */
+	--sl-color-red: #ff6b81; /* --alarm */
+	--sl-color-blue: #8fb3ff; /* --proof */
+	--sl-font: ui-sans-serif, -apple-system, 'Segoe UI', Inter, system-ui, sans-serif;
+	--sl-font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+	--sl-color-accent-low: #c9f2ee;
+	--sl-color-accent: #127a71;
+	--sl-color-accent-high: #0b4a45;
+	--sl-color-orange: #a8620f;
+}
+
+/* Diagrams are dark-background SVGs; keep them legible in either theme. */
+.sl-markdown-content img[src$='.svg'] {
+	border-radius: 0.5rem;
+}

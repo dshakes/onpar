@@ -1,25 +1,32 @@
+# Build the public site and deploy it to GitHub Pages as one artifact:
+#   https://dshakes.github.io/onpar/       <- landing page (site/index.html), /assets, /install.sh
+#   https://dshakes.github.io/onpar/lab/   <- interactive memory lab and CLI reference
+#   https://dshakes.github.io/onpar/docs/  <- Starlight, generated from docs/*.md and docs/adr/*.md
+# Plain static HTML, no server. The build fails on any broken internal docs link.
 name: pages
 
 on:
   push:
     branches: [main]
-    paths: ["site/**", "docs/assets/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "docs/**", ".github/workflows/pages.yml"]
+  # PRs build the site (diagrams, assets, links) without deploying.
+  pull_request:
+    paths: ["site/**", "docs/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
+# Pages deploy needs these; least-privilege otherwise.
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# One in-flight deploy at a time; don't cancel a running deploy.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -52,9 +59,29 @@ jobs:
               print('missing assets:', missing); sys.exit(1)
           print('all assets present')
           PY
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/setup-node@v5
         with:
-          path: site
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      # prebuild syncs docs/ into Starlight, the build validates every internal link,
+      # postbuild copies the landing page, assets and lab into site/dist.
+      - name: build site
+        run: cd site && npm ci && npm run build
+      - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v4

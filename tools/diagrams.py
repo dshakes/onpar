@@ -255,13 +255,13 @@ def note(parts: list[str], x: int, y: int, text: str, per_line: int = 116) -> No
         parts.append(f'<text x="{x}" y="{y + i * 16}" class="note">{ln}</text>')
 
 
-def save(name: str, parts: list[str]) -> None:
+def save(name: str, parts: list[str], outs: tuple[pathlib.Path, ...] = OUTS) -> None:
     parts.append("</svg>")
     body = "\n".join(parts)
-    for out in OUTS:
+    for out in outs:
         out.mkdir(parents=True, exist_ok=True)
         (out / name).write_text(body)
-    print(f"  {name}  {len(body) / 1024:.1f} KB  →  {len(OUTS)} trees")
+    print(f"  {name}  {len(body) / 1024:.1f} KB  →  {len(outs)} trees")
 
 
 # --- 1. where the memory goes --------------------------------------------------
@@ -2250,6 +2250,89 @@ def autotune() -> None:
     save("autotune.svg", p)
 
 
+def og_card() -> None:
+    """The 1200x630 social card, rasterized to site/assets/og.png.
+
+    Every number on it is imported, so the card cannot advertise an engine
+    count or a tool count the code no longer has. Written to site/assets only:
+    it is never embedded in the docs, and docs/assets is where the orphan test
+    looks.
+
+    Reproduce the PNG (from the repo root, after `python3 tools/diagrams.py`):
+
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\
+          --headless=new --disable-gpu --hide-scrollbars --window-size=1200,630 \\
+          --screenshot="$PWD/site/assets/og.png" "file://$PWD/site/assets/og-card.svg"
+    """
+    import sys
+
+    sys.path.insert(0, str(ROOT / "src"))
+    from onpar.engines import Setting, adapter_for
+    from onpar.mcp import TOOLS
+    from onpar.plan import Engine
+
+    engines = sum(adapter_for(e.value) is not None for e in Engine)
+    chips = [
+        (str(engines), "engines"),
+        (str(len(Setting)), "planner knobs"),
+        (str(len(TOOLS)), "MCP tools"),
+        # Test-pinned wording; keep it verbatim.
+        ("+0.07 ms", "added p95, measured"),
+    ]
+
+    W, H = 1200, 630
+    sub = (
+        "Proves which open-weight model can replace your closed-model API, on your "
+        "own traffic and hardware, then migrates you with a gate and a rollback."
+    )
+    p = head(W, H, "Is the open model on par?", f"onpar. {sub}")
+    # Rasterized, so there is no reader preference to honour: pin the designed
+    # dark mode, and drop head()'s 15px corner title in favour of the brand row.
+    p[0] = p[0].replace("<svg ", '<svg data-theme="dark" ', 1)
+    p.pop()
+
+    # Brand: incumbent dot, gate, candidate dot, as in the site header.
+    p.append(
+        '<circle cx="80" cy="88" r="9" fill="#f0a340"/>'
+        '<rect x="95" y="86" width="22" height="3" fill="#1e3546"/>'
+        '<circle cx="132" cy="88" r="9" fill="#2fd4c4"/>'
+        '<text x="158" y="100" style="fill:var(--ink);font-size:36px;font-weight:700">'
+        "onpar</text>"
+    )
+    p.append(chip(1000, 60, 120, 120, accent=0, proven=True))
+
+    p.append(
+        '<text x="72" y="300" style="fill:var(--ink);font-size:76px;font-weight:750;'
+        'letter-spacing:-0.02em">Is the open model on par?</text>'
+    )
+    words, line, lines = sub.split(), "", []
+    for w in words:
+        if len(line) + len(w) + 1 > 74:
+            lines.append(line)
+            line = w
+        else:
+            line = f"{line} {w}".strip()
+    lines.append(line)
+    for i, ln in enumerate(lines):
+        p.append(
+            f'<text x="72" y="{362 + i * 40}" style="fill:var(--ink2);font-size:29px">{ln}</text>'
+        )
+
+    # ponytail: pill width from a per-character estimate; Chrome render is the check.
+    x = 72
+    for value, label in chips:
+        w = 40 + int(len(value) * 14.5 + len(label) * 11.8)
+        p.append(
+            f'<rect x="{x}" y="500" width="{w}" height="58" rx="29" fill="var(--panel)" '
+            'stroke="var(--grid)" stroke-width="1.5"/>'
+            f'<text x="{x + 20}" y="538" style="font-size:25px">'
+            f'<tspan style="fill:#2fd4c4;font-weight:700">{value}</tspan>'
+            f'<tspan style="fill:var(--ink2)"> {label}</tspan></text>'
+        )
+        x += w + 16
+    save("og-card.svg", p, outs=(ROOT / "site" / "assets",))
+
+
 if __name__ == "__main__":
     print("writing diagrams:")
     memory_breakdown()
@@ -2272,6 +2355,7 @@ if __name__ == "__main__":
     resume_ledger()
     landscape_2026()
     autotune()
+    og_card()  # then rasterize to site/assets/og.png, see og_card()
 
     # fit-explorer.json — precomputed solver output for the site's "Will it fit?"
     # explorer.  Same directory as the diagrams so `python3 tools/diagrams.py`
