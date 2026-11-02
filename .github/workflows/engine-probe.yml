@@ -89,7 +89,8 @@ jobs:
       - name: Serve with the jinja template (tool calls) and no reasoning budget
         run: |
           set -euo pipefail
-          nohup llama-server -hf unsloth/Qwen3-4B-GGUF:Q4_K_M --jinja --reasoning-format deepseek --reasoning-budget 0 \
+          nohup llama-server -hf unsloth/Qwen3-4B-GGUF:Q4_K_M --jinja --reasoning-format deepseek \
+            --chat-template-kwargs '{"enable_thinking":false}' --reasoning-budget 0 \
             --host 127.0.0.1 --port 8080 > llama.log 2>&1 &
           for _ in $(seq 1 120); do
             curl -sf http://127.0.0.1:8080/v1/models >/dev/null && break
@@ -108,7 +109,9 @@ jobs:
           done
           echo "::error::the server never answered a one-token completion"; exit 1
       - name: Probe
-        # llama.cpp constrains json_object with a grammar, so all three must pass.
-        run: python3 tools/engine_probe.py --endpoint http://127.0.0.1:8080/v1 --timeout 600 --expect answers,json,tool-call
+        # Whether llama-server enforces json_object varies by build (a local build
+        # 10210 did not; a brew build did), so json is reported, not required.
+        # The answer and the structured tool call are what this engine must do.
+        run: python3 tools/engine_probe.py --endpoint http://127.0.0.1:8080/v1 --timeout 600 --expect answers,tool-call
       - if: failure()
         run: tail -50 llama.log

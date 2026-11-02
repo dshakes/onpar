@@ -54,17 +54,20 @@ REASONING = ("qwen3-30b-a3b", "qwen3-32b", "qwen3-235b-a22b")
         ("llm-d", ("--default-chat-template-kwargs", OFF), "vllm_thinking"),
         ("sglang", ("--default-chat-template-kwargs", OFF), "sglang_thinking"),
         ("mlx", ("--chat-template-args", OFF), "mlx_thinking"),
-        ("llama.cpp", ("--reasoning-budget", "0"), "llamacpp_thinking"),
+        (
+            "llama.cpp",
+            ("--chat-template-kwargs", '{"enable_thinking":false}', "--reasoning-budget", "0"),
+            "llamacpp_thinking",
+        ),
     ],
 )
 def test_thinking_off_is_each_engines_cited_spelling(engine, argv, source):
     a = adapter_for(engine)
     assert a is not None
     assert a.translate(Setting.THINKING, False).argv == argv
-    assert "checked 2026-11-01" in SOURCES[source], "an uncited spelling is not emitted"
+    assert "checked 2026-11-0" in SOURCES[source], "an uncited spelling is not emitted"
     # The value is JSON the engine parses, not a string that merely looks like it.
-    if argv[0] != "--reasoning-budget":
-        assert json.loads(argv[1]) == {"enable_thinking": False}
+    assert json.loads(argv[1]) == {"enable_thinking": False}
 
 
 def test_ollama_has_no_serve_time_switch_and_says_what_to_do_instead():

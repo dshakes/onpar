@@ -167,3 +167,14 @@ def test_reasoning_prose_in_content_is_not_an_answer():
     finally:
         srv.shutdown()
     assert not ok and "not a label" in why
+
+
+def test_a_leaked_closing_think_tag_is_stripped_before_the_label_is_read():
+    """llama.cpp with --reasoning-budget 0 returned "</think>\n\nbilling" on the
+    first CI run; the label after the tag is the answer."""
+    srv, url = _serve(lambda p: {"role": "assistant", "content": "</think>\n\nbilling"})
+    try:
+        ok, why = engine_probe.probe_answers(url, "m", 5)
+    finally:
+        srv.shutdown()
+    assert ok and "stripped" in why

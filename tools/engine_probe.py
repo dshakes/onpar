@@ -84,8 +84,14 @@ def probe_answers(endpoint: str, model: str, timeout: float) -> tuple[bool, str]
     content = (msg.get("content") or "").strip()
     reasoning = msg.get("reasoning") or msg.get("reasoning_content") or ""
     tokens = r.get("usage", {}).get("completion_tokens", "?")
+    # llama.cpp with --reasoning-budget 0 injects the closing think tag into the
+    # reply; the collector strips it before grading, so the probe does too.
+    leaked = content.startswith(("<think>", "</think>"))
+    if leaked:
+        content = content.split("</think>", 1)[-1].strip() if "</think>" in content else ""
     if content.strip(" .\n\"'").lower() in {"billing", "login", "bug"}:
-        return True, f"answered {content!r} in {tokens} tokens"
+        note = " (an inline think tag was stripped first)" if leaked else ""
+        return True, f"answered {content!r} in {tokens} tokens{note}"
     if content:
         # Reasoning prose in `content` is not an answer: a small model with a
         # zero reasoning budget on llama.cpp still thought out loud in the reply.

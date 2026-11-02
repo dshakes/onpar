@@ -257,9 +257,13 @@ SOURCES = {
     # mlx: "--chat-template-args  A JSON formatted string of arguments for the
     # tokenizer's apply_chat_template, e.g. '{"enable_thinking":false}'".
     "mlx_thinking": "mlx_lm.server --help, mlx-lm 0.32.2 (checked 2026-11-01)",
-    # llama.cpp: "--reasoning-budget N  token budget for thinking: -1 for
-    # unrestricted, 0 for immediate end". Needs --jinja, on by default here.
-    "llamacpp_thinking": "llama-server --help, build 10210 (checked 2026-11-01)",
+    # llama.cpp: "--chat-template-kwargs  JSON of kwargs for the chat template"
+    # and "--reasoning-budget N  token budget for thinking: -1 for unrestricted,
+    # 0 for immediate end". Both needed: with the budget alone, Qwen3-4B still
+    # wrote "</think>" into its reply and spent tokens before it (observed
+    # 2026-11-02, build 10210); with enable_thinking=false it answered in two
+    # tokens. Needs --jinja, on by default here.
+    "llamacpp_thinking": "llama-server --help, build 10210 (checked 2026-11-02)",
     # Ollama 0.21.0: `ollama serve --help` lists no thinking variable; `think`
     # is a per-request field of /api/chat only.
     "ollama_thinking": "ollama serve --help, ollama 0.21.0 (checked 2026-11-01)",
@@ -1020,9 +1024,17 @@ class LlamaCppAdapter(Adapter):
             case Setting.THINKING:
                 if value:
                     return _thinking_on("llama.cpp")
-                # 0 is "immediate end" of the thinking phase. --reasoning off
-                # also exists in this build; the budget flag is the older one.
-                return Translated(("--reasoning-budget", "0"))
+                # The template kwarg stops the model from opening a thinking
+                # phase; the zero budget ends one if the template ignores the
+                # kwarg. The budget alone leaks the closing tag into the reply.
+                return Translated(
+                    (
+                        "--chat-template-kwargs",
+                        '{"enable_thinking":false}',
+                        "--reasoning-budget",
+                        "0",
+                    )
+                )
         return Unsupported(setting, f"no mapping defined for {setting}")
 
     def command(
@@ -1491,7 +1503,12 @@ def demo() -> None:
         "llm-d": ("--default-chat-template-kwargs", '{"enable_thinking":false}'),
         "sglang": ("--default-chat-template-kwargs", '{"enable_thinking":false}'),
         "mlx": ("--chat-template-args", '{"enable_thinking":false}'),
-        "llama.cpp": ("--reasoning-budget", "0"),
+        "llama.cpp": (
+            "--chat-template-kwargs",
+            '{"enable_thinking":false}',
+            "--reasoning-budget",
+            "0",
+        ),
     }
     for engine_name, argv in off.items():
         a = adapter_for(engine_name)
