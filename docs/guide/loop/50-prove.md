@@ -27,34 +27,36 @@ raises the chance that one passes by luck, so the report adds a Bonferroni line.
 ## The run
 
 The candidate is qwen3-30b-a3b, served on this machine by `onpar run` through
-MLX at q8 with thinking off. `--replay-sessions` adds the whole-session check
-for the refund agent.
+llama.cpp at q8, with thinking off and structured output enforced by grammar.
+`--replay-sessions` adds the whole-session check for the refund agent.
 
 <!-- run: prove -->
 
 ## How to read it
 
-- **Regret comes first.** Structured JSON scored `0% [0–9]` and stays on the
-  incumbent. The collector's warning says why: 40 of 40 replies were not the
-  JSON that `response_format` asked for, because this server does not enforce
-  it. The replies in the resume ledger, `~/.onpar/story.candidate.jsonl`, show
-  how: 13 are valid JSON arrays and 27 are not valid JSON, against 40 objects
-  from the incumbent. That is a server finding, not a model verdict.
-- **The weighted verdict is `75% [70–77]`.** It is a sum over shapes, each counted
-  by its share of traffic.
+- **Structured JSON is the one proven shape.** `100% [91–100]` over 40 items,
+  every reply the JSON object the request asked for. The collector sends a
+  captured `json_object` request as a `json_schema` for any object, which is
+  the form grammar-constrained engines enforce. Had the server ignored it, the
+  warning line would say so, and the shape would score as a server finding,
+  not a model verdict.
+- **The weighted verdict is `96% [90–97]`.** It is a sum over shapes, each counted
+  by its share of traffic. The multiplicity line is the honest footnote: seven
+  shapes scored against one bar, and under Bonferroni the one that clears it
+  would not.
 - **Free text #1 scored `92% [80–97]`.** It needs 525 graded items to clear a 90%
-  bar at that rate. Free text #2, at 84%, cannot clear the bar with more items.
+  bar at that rate. Free text #2, at 86%, cannot clear the bar with more items.
 - **Free text #3 scored `100% [88–100]` over 29.** It needs 35 items, so 6 more.
 - **26 duplicate prompts were collapsed.** A prompt repeated within a shape is
   one observation asked twice. Every interval assumes independent items, so the
   copies merge, and an item passes only if every copy passed.
 - **The judge was not used.** Every verdict above comes from deterministic
   graders.
-- **COLLECTED reads 0.01s** because `--resume` reused replies already recorded
-  under that prefix. Nothing was asked twice.
+- **COLLECTED reads 76 s** for 197 replies. `--resume` records each one under
+  that prefix as it lands, so a second run asks nothing twice.
 
-The engine probe confirms the structured-JSON finding against the same server
-in three requests:
+The engine probe confirms, in three requests to the same server, that it
+answers, enforces the format and returns structured tool calls:
 
 <!-- run: engine-probe -->
 
@@ -127,13 +129,13 @@ advance on it. Evidence that rests on the judge alone never moves traffic.
 ## When it says no
 
 Look at the agentic block again: 100% decision agreement, κ=1.00, 12 of 12
-sessions to the end, and four shapes at 100%. The verdict is still
-`Move 0% of traffic`.
+sessions to the end, and five shapes at 100%. The verdict moves 20% of traffic,
+the one shape with 40 items, and holds the rest.
 
 A perfect score over 12 items is a lower bound of 76%, not a pass. Each open
 shape says how many more graded items would settle it, or that more items will
-not. One shape is proven below the bar and must stay on the incumbent. The
-saving reads unknown because no cost was passed.
+not: free text #2 is at or below the bar, so collecting more cannot clear it.
+The saving reads unknown because no cost was passed.
 
 ## The knobs that matter
 

@@ -7,12 +7,12 @@
 
 # Is the open model<br>on par?
 
-<img src="docs/assets/loop-animated.svg" alt="The switch loop on 197 recorded captures: observe, distill into 7 task shapes, fit 5 of 14 models, prove with κ=1.00 over 36 agent steps and a 75% [70–77] weighted verdict, deploy with 13 knobs set, cut over moves 0% while shadow holds, guard keeps the receipt. Every figure is read from the recorded run." width="100%">
+<img src="docs/assets/loop-animated.svg" alt="The switch loop on 197 recorded captures: observe, distill into 7 task shapes, fit 5 of 14 models, prove with κ=1.00 over 36 agent steps and a 96% [90–97] weighted verdict, deploy with 13 knobs set, cut over moves 20% while shadow holds, guard keeps the receipt. Every figure is read from the recorded run." width="100%">
 
 **onpar proves which open-weight model can replace your closed-model API, on your own traffic and hardware, then moves you across with a quality gate and a rollback.**
 
 [![status](https://img.shields.io/badge/status-beta-22d3ee?style=flat-square)](docs/50-roadmap.md)
-[![tests](https://img.shields.io/badge/tests-2772-34d399?style=flat-square)](#verification)
+[![tests](https://img.shields.io/badge/tests-2775-34d399?style=flat-square)](#verification)
 [![license](https://img.shields.io/badge/license-Apache--2.0-a78bfa?style=flat-square)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-read-fbbf24?style=flat-square)](https://dshakes.github.io/onpar/docs/)
 
@@ -46,7 +46,7 @@ onpar_learn     // inference curriculum grounded in this machine's numbers
 
 ## One real run
 
-Benchmarks are someone else's exam. This is what onpar said about one team's own traffic: gpt-4o-mini as the incumbent, Qwen3 30B-A3B served locally through MLX at q8 as the candidate. Every figure below is quoted from the recordings the docs embed.
+Benchmarks are someone else's exam. This is what onpar said about one team's own traffic: gpt-4o-mini as the incumbent, Qwen3 30B-A3B served locally through llama.cpp at q8 as the candidate. Every figure below is quoted from the recordings the docs embed.
 
 | | What the run printed |
 |---|---|
@@ -55,11 +55,11 @@ Benchmarks are someone else's exam. This is what onpar said about one team's own
 | Left out | 1 capture was an upstream error, and an error is not the incumbent's answer |
 | Agent moves | decision agreement 100% [90–100] over 36 tool-context steps · κ=1.00 |
 | Whole sessions | 12/12 followed the incumbent's path to the end |
-| Structured JSON | 0% [0–9]: 40 of 40 replies were not the JSON asked for, because the server does not enforce `response_format` |
-| Weighted verdict | 75% [70–77] |
-| Decision | **Move 0% of traffic** |
+| Structured JSON | 100% [91–100] over 40 items: every reply the JSON object asked for, because the server enforces `response_format` |
+| Weighted verdict | 96% [90–97] |
+| Decision | **Move 20% of traffic**, the one proven shape; six are not proven either way |
 
-Recorded 2026-11-02 on an M4 Max. The agent work looks perfect and still moves nothing, because 12 flawless items cannot clear a 90% bar. That is the point: the proof does not flatter. Walk the whole run in [your first proof, in ten minutes](docs/guide/start/30-walkthrough.md).
+Recorded 2026-11-02 on an M4 Max. The agent work looks perfect and still moves nothing, because 12 flawless items cannot clear a 90% bar. Only the shape with 40 items moves. That is the point: the proof does not flatter. Walk the whole run in [your first proof, in ten minutes](docs/guide/start/30-walkthrough.md).
 
 ## Seven stages. Each one can say no.
 
@@ -174,7 +174,7 @@ That is an illustration with stated inputs, not the recorded run above. The reco
 uvx --from onpar onpar fit           # no install, no deps
 pip install onpar                       # or install it
 brew install dshakes/tap/onpar          # macOS, from the shared tap
-npx onpar-cli@1.5.0 fit                        # same build, via npm
+npx onpar-cli@1.5.1 fit                        # same build, via npm
 onpar version                              # what you have, and where it came from
 ```
 
@@ -184,10 +184,10 @@ onpar version                              # what you have, and where it came fr
 pip install onpar onpar-gateway onpar-core   # observe, distill, prove
 ```
 
-`onpar doctor` checks all three in the order the loop needs them, and ends with the one command to run next. The commands above are unpinned and fetch the newest release — currently **1.5.0**. `npx onpar-cli@1.5.0` runs `onpar` 1.5.0 and nothing else. Pin it when you need a build to stay put:
+`onpar doctor` checks all three in the order the loop needs them, and ends with the one command to run next. The commands above are unpinned and fetch the newest release — currently **1.5.1**. `npx onpar-cli@1.5.1` runs `onpar` 1.5.1 and nothing else. Pin it when you need a build to stay put:
 
 ```bash
-uvx --from onpar==1.5.0 onpar fit   # exactly this build
+uvx --from onpar==1.5.1 onpar fit   # exactly this build
 ```
 
 **Versioning.** `onpar version` reads the installed metadata, not a hand-typed string. Through 0.1.4 receipts were stamped `0.1.0`. Fixed in 0.1.5, so a receipt now names the build that produced it.
@@ -197,10 +197,10 @@ uvx --from onpar==1.5.0 onpar fit   # exactly this build
 ```bash
 cargo test --all                                   # 297 Rust
 cargo clippy --all-targets -- -D warnings
-uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2475 Python
+uv run --with pytest --with pyyaml --python 3.13 pytest -q   # 2478 Python
 ```
 
-**2772 tests.** 2475 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. The fit transcript, the saving line, the install pins and the test counts on this page are checked by tests; the market figures are dated and sourced. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
+**2775 tests.** 2478 Python, 297 Rust. Every module's `demo()` is run by a test, the Rust core cannot panic on a sizing bug, and gateway tests run over real TCP. The fit transcript, the saving line, the install pins and the test counts on this page are checked by tests; the market figures are dated and sourced. Depth: [field guide](docs/05-field-guide.md#verification-in-depth).
 
 ## Docs
 

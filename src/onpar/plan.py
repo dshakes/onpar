@@ -294,7 +294,19 @@ def _pick_engine(hw: Hardware, req: Requirements) -> tuple[Engine, str]:
         )
 
     if hw.kind == "apple":
-        if req.structured_output or req.concurrency >= 4:
+        if req.structured_output:
+            # The requirement decides, not the batching story: mlx_lm.server
+            # has no grammar and answers a response_format request with prose
+            # (its adapter says Unsupported), while llama-server enforces a
+            # json_schema by grammar. Probed on an M4 Max, 2026-11-02: 40 of 40
+            # structured items failed on mlx and 40 of 40 passed on llama.cpp,
+            # same model, same weights precision.
+            return (
+                Engine.LLAMA_CPP,
+                "Apple silicon with structured output required: llama.cpp "
+                "enforces response_format with a grammar; mlx_lm.server cannot.",
+            )
+        if req.concurrency >= 4:
             return (
                 Engine.MLX,
                 "Apple silicon: the CUDA engines cannot run here at all. MLX has "

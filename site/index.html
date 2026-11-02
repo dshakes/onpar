@@ -438,7 +438,7 @@
         <span class="bar" style="background:linear-gradient(90deg,var(--candidate),var(--ink3))"></span>
         <span class="whisk"></span>
       </div>
-      <div class="cilabel"><span>70%</span><span>the interval, not the point</span><span>77%</span></div>
+      <div class="cilabel"><span>90%</span><span>the interval, not the point</span><span>97%</span></div>
       <div class="chips">
         <span class="chip"><b>no config file</b> to write</span>
         <span class="chip"><b>your traffic</b>, not a benchmark</span>
@@ -452,12 +452,12 @@
         <i class="tl" style="background:#34d399"></i>
         <span class="termtitle">onpar · M4 Max · recorded 2026-11-02</span>
       </div>
-<pre><span class="ln" style="--d:0.00s"><span class="p">$</span> <span class="u">onpar fit --context 32k --concurrency 8</span></span><span class="ln" style="--d:0.10s">&nbsp;</span><span class="ln" style="--d:0.15s">  M4 Max · 128 GB · 546 GB/s       usable: <span class="k">96 GB</span></span><span class="ln" style="--d:0.25s">&nbsp;</span><span class="ln" style="--d:0.30s">  model                 quant  total   ~tok/s  licence</span><span class="ln" style="--d:0.40s">  <span class="c">─────────────────────────────────────────────────</span></span><span class="ln" style="--d:0.50s">  Qwen3 30B-A3B (MoE)   q8     56.2G   <span class="k">60</span>     Apache-2.0</span><span class="ln" style="--d:0.60s">  Phi-4 14B             q8     66.3G   <span class="k">18</span>      MIT</span><span class="ln" style="--d:0.70s">&nbsp;</span><span class="ln" style="--d:0.75s">  <span class="r">NOT FEASIBLE</span></span><span class="ln" style="--d:0.85s">  Kimi K3 (2.8T MoE)    <span class="c">weights alone need 1,467 GB at q4 —</span><span class="ln" style="--d:0.95s">                        sparsity cuts compute, not memory</span></span><span class="ln" style="--d:1.05s">&nbsp;</span><span class="ln" style="--d:1.10s"><span class="p">$</span> <span class="u">onpar receipt receipt.json</span></span><span class="ln" style="--d:1.20s">  Migration receipt · gpt-4o-mini → qwen3-30b-a3b</span><span class="ln" style="--d:1.30s">  <span class="r">MUST STAY on gpt-4o-mini — proven below the bar:</span></span><span class="ln" style="--d:1.40s">    · structured JSON · &lt;=1k context 0% [0%–9%] over 40 items</span><span class="ln" style="--d:1.50s">  <span class="w">Movable: 0% of captured traffic</span></span><span class="ln" style="--d:1.60s">&nbsp;</span></pre>
+<pre><span class="ln" style="--d:0.00s"><span class="p">$</span> <span class="u">onpar fit --context 32k --concurrency 8</span></span><span class="ln" style="--d:0.10s">&nbsp;</span><span class="ln" style="--d:0.15s">  M4 Max · 128 GB · 546 GB/s       usable: <span class="k">96 GB</span></span><span class="ln" style="--d:0.25s">&nbsp;</span><span class="ln" style="--d:0.30s">  model                 quant  total   ~tok/s  licence</span><span class="ln" style="--d:0.40s">  <span class="c">─────────────────────────────────────────────────</span></span><span class="ln" style="--d:0.50s">  Qwen3 30B-A3B (MoE)   q8     56.2G   <span class="k">60</span>     Apache-2.0</span><span class="ln" style="--d:0.60s">  Phi-4 14B             q8     66.3G   <span class="k">18</span>      MIT</span><span class="ln" style="--d:0.70s">&nbsp;</span><span class="ln" style="--d:0.75s">  <span class="r">NOT FEASIBLE</span></span><span class="ln" style="--d:0.85s">  Kimi K3 (2.8T MoE)    <span class="c">weights alone need 1,467 GB at q4 —</span><span class="ln" style="--d:0.95s">                        sparsity cuts compute, not memory</span></span><span class="ln" style="--d:1.05s">&nbsp;</span><span class="ln" style="--d:1.10s"><span class="p">$</span> <span class="u">onpar receipt receipt.json</span></span><span class="ln" style="--d:1.20s">  Migration receipt · gpt-4o-mini → qwen3-30b-a3b</span><span class="ln" style="--d:1.30s">  <span class="w">NOT PROVEN either way — not enough evidence:</span></span><span class="ln" style="--d:1.40s">    · tool-calling (2 tools) 100% [76%–100%] over 12 items — needs 35</span><span class="ln" style="--d:1.50s">  <span class="k">Proven at or above the 90% bar:</span></span><span class="ln" style="--d:1.60s">    · structured JSON · &lt;=1k context 100% [91%–100%] over 40 items</span><span class="ln" style="--d:1.70s">  <span class="k">Movable: 20% of captured traffic</span></span><span class="ln" style="--d:1.60s">&nbsp;</span></pre>
     </div>
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="n grad">2772</div><div class="l">tests · 2475 Python, 297 Rust</div></div>
+    <div class="stat"><div class="n grad">2775</div><div class="l">tests · 2478 Python, 297 Rust</div></div>
     <div class="stat"><div class="n">0</div><div class="l">bytes of telemetry, egress or accounts</div></div>
     <div class="stat"><div class="n">21</div><div class="l">diagrams, generated and palette-validated</div></div>
     <div class="stat"><div class="n">7</div><div class="l">engines, native config for each</div></div>
@@ -492,8 +492,8 @@
 
 <section id="run"><div class="wrap rise">
   <p class="eyebrow">One real run · recorded 2026-11-02 on an M4 Max</p>
-  <h2>A perfect-looking run that moves nothing.<br><span class="grad">That is the point.</span></h2>
-  <p class="sub">gpt-4o-mini was the incumbent. Qwen3 30B-A3B, served locally through MLX at q8,
+  <h2>A perfect-looking run that moves one shape.<br><span class="grad">That is the point.</span></h2>
+  <p class="sub">gpt-4o-mini was the incumbent. Qwen3 30B-A3B, served locally through llama.cpp at q8,
     was the candidate. Every figure below is quoted from the recordings the docs embed.</p>
   <div class="tablewrap"><table>
     <tr><th>Stage</th><th>What the run printed</th></tr>
@@ -501,12 +501,13 @@
     <tr><td><b>Agent traffic</b></td><td>12 agent sessions · 36 steps (18% of captures)</td></tr>
     <tr><td><b>Agent moves</b></td><td>decision agreement 100% [90–100] over 36 tool-context steps · κ=1.00</td></tr>
     <tr><td><b>Whole sessions</b></td><td>12/12 sessions followed the incumbent's path to the end</td></tr>
-    <tr><td><b>Structured JSON</b></td><td>0% [0–9]: 40 of 40 replies were not the JSON response_format asked for, because the server does not enforce it</td></tr>
-    <tr><td><b>Weighted verdict</b></td><td>75% [70–77]</td></tr>
-    <tr><td><b>Decision</b></td><td><b>Move 0% of traffic</b></td></tr>
+    <tr><td><b>Structured JSON</b></td><td>100% [91–100] over 40 items: every reply the JSON object asked for, because the server enforces response_format</td></tr>
+    <tr><td><b>Weighted verdict</b></td><td>96% [90–97]</td></tr>
+    <tr><td><b>Decision</b></td><td><b>Move 20% of traffic</b>, the one proven shape; six are not proven either way</td></tr>
   </table></div>
   <p class="sub">The agent work is flawless and still not proven, because 12 flawless items give
-    a lower bound of 76%, not 90%. The receipt prints its bad news first.
+    a lower bound of 76%, not 90%. Only the shape with 40 items moves, and the receipt prints
+    what is not proven before what is.
     <a href="docs/start/walkthrough/">Walk the whole run</a>.</p>
 </div></section>
 
@@ -524,19 +525,18 @@
       <p><code>needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)</code></p>
     </div>
     <div class="card">
-      <div class="cardtop"><span class="ico">🧩</span><span class="tag bad">server fault</span></div>
-      <h3>The server ignored the format</h3>
-      <p>MLX has no structured-output flag, so the plan listed it under NOT EXPRESSED, and the
-        collector named the failure as the server's, not the model's:</p>
-      <p><code>40 of 40 structured-output replies were not the JSON response_format asked for: format not enforced by the server</code></p>
+      <div class="cardtop"><span class="ico">⏱</span><span class="tag bad">cannot meet</span></div>
+      <h3>A budget no flag can close</h3>
+      <p>Asked for a 2 ms inter-token budget, the planner did not tune around it. It printed
+        the gap under CANNOT MEET, with the flags it would have used:</p>
+      <p><code>inter-token budget is 2ms, but decode is a roofline estimate of 60 tok/s — about 17ms per token</code></p>
     </div>
     <div class="card">
       <div class="cardtop"><span class="ico">💭</span><span class="tag warn">thinking off</span></div>
       <h3>A thinking model would answer nothing</h3>
       <p>Qwen3 thinks before it answers and spends a small token budget on reasoning. So
-        <code>onpar run</code> serves it with
-        <code>--chat-template-args '{"enable_thinking":false}'</code>, and the probe got its
-        answer:</p>
+        <code>onpar run</code> serves it with thinking off, here
+        <code>--reasoning-budget 0</code> on llama.cpp, and the probe got its answer:</p>
       <p><code>answered 'billing' in 2 tokens</code></p>
     </div>
   </div>
@@ -770,7 +770,7 @@ const CMDS = {
   // onpar and the command is onpar; dropping the --from breaks the line.
   uvx:  [['uvx --from onpar onpar fit --context 32k --concurrency 8',
           'size what runs on this machine — nothing cloned, nothing installed'],
-         ['uvx --from onpar==1.5.0 onpar fit --context 32k --concurrency 8',
+         ['uvx --from onpar==1.5.1 onpar fit --context 32k --concurrency 8',
           'pinned to a build that stays put; unpinned always fetches the newest'],
          ['uv tool install onpar && onpar doctor',
           'or put the onpar command on your PATH, and check the machine is ready for the whole loop']],
@@ -783,8 +783,8 @@ const CMDS = {
   // cautious. tests/test_docs_lab.py now checks both directions.
   npm:  [['npx onpar-cli fit --context 32k --concurrency 8',
           'no Python packaging to name — the shim execs uvx --from onpar underneath'],
-         ['npx onpar-cli@1.5.0 fit --context 32k --concurrency 8',
-          'pinned: runs onpar==1.5.0 exactly, so the two registries cannot drift apart']],
+         ['npx onpar-cli@1.5.1 fit --context 32k --concurrency 8',
+          'pinned: runs onpar==1.5.1 exactly, so the two registries cannot drift apart']],
   // Back since 1.4.0, and only because a clean arm64 runner installed it from the
   // tap and ran it (.github/workflows/brew-install.yml, on every release and weekly).
   brew: [['brew install dshakes/tap/onpar && onpar doctor',

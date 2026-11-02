@@ -1,9 +1,9 @@
-$ python3 tools/engine_probe.py --endpoint http://127.0.0.1:8000/v1 --model mlx-community/Qwen3-30B-A3B-8bit
+$ python3 tools/engine_probe.py --endpoint http://127.0.0.1:8001/v1 --model Qwen/Qwen3-30B-A3B-GGUF:Q8_0
 
-probing http://127.0.0.1:8000/v1 · model mlx-community/Qwen3-30B-A3B-8bit
+probing http://127.0.0.1:8001/v1 · model Qwen/Qwen3-30B-A3B-GGUF:Q8_0
   ok    answers   answered 'billing' in 2 tokens
-  FAIL  json      prose came back: 'The sea stretches endlessly, its waves whispering secrets of' (response_format is not enforced by this server)
+  ok    json      a JSON object came back even for a prose prompt: the server enforces the format
   ok    tool-call structured tool call to 'lookup_order'
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1

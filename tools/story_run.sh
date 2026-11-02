@@ -14,6 +14,9 @@ cd "$(dirname "$0")/.."
 OUT=docs/guide/_runs
 mkdir -p "$OUT"
 CANDIDATE=""
+# The id the candidate server reports. `onpar run` on a Mac with
+# --structured-output serves the GGUF on llama.cpp (grammar-enforced JSON).
+CANDIDATE_MODEL="${CANDIDATE_MODEL:-Qwen/Qwen3-30B-A3B-GGUF:Q8_0}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --candidate) CANDIDATE="$2"; shift 2 ;;
@@ -55,16 +58,20 @@ record fit           onpar fit --context 32k --concurrency 8
 record fit-explain   onpar fit --explain qwen3-30b-a3b --context 32k --concurrency 8
 record models        onpar models
 record learn-1       onpar learn basics 1 --no-quiz
-record run-dry       onpar run qwen3-30b-a3b --dry-run
+# The port the candidate is served on, so the serve and prove transcripts agree.
+PORT_FLAG=""
+if [ -n "$CANDIDATE" ]; then p="${CANDIDATE##*:}"; p="${p%%/*}"; [ "$p" = 8000 ] || PORT_FLAG="--port $p"; fi
+# shellcheck disable=SC2086
+record run-dry       onpar run qwen3-30b-a3b --structured-output $PORT_FLAG --dry-run
 record build         onpar build "support assistant for 20 agents" --context 32k --concurrency 8 --tool-calling
 record catalog       onpar catalog qwen3-30b-a3b
 record where         onpar where qwen3-30b-a3b --context 32k
 # Two refusals the loop makes before any model is served.
 record build-cannot-meet onpar build "chat assistant" --context 32k --concurrency 8 --itl-ms 2
 if [ -n "$CANDIDATE" ]; then
-  record engine-probe python3 tools/engine_probe.py --endpoint "$CANDIDATE" --model mlx-community/Qwen3-30B-A3B-8bit
+  record engine-probe python3 tools/engine_probe.py --endpoint "$CANDIDATE" --model "$CANDIDATE_MODEL"
   # On a machine doing anything else this refuses to call its number a measurement.
-  record measure     onpar measure --endpoint "$CANDIDATE" --served-model mlx-community/Qwen3-30B-A3B-8bit --model qwen3-30b-a3b --samples 3
+  record measure     onpar measure --endpoint "$CANDIDATE" --served-model "$CANDIDATE_MODEL" --model qwen3-30b-a3b --samples 3
 fi
 
 if need distill "onpar observe (and send traffic through it)" "$HOME/.onpar/captures.log"; then
@@ -76,7 +83,7 @@ if need prove "onpar distill" evalset.json; then
     # Costs are left out on purpose; the receipt then says the saving is unknown,
     # which is the true state until the owner passes figures they believe.
     record prove     onpar prove evalset.json --candidate-endpoint "$CANDIDATE" \
-                       --candidate qwen3-30b-a3b --candidate-model mlx-community/Qwen3-30B-A3B-8bit \
+                       --candidate qwen3-30b-a3b --candidate-model "$CANDIDATE_MODEL" \
                        --incumbent gpt-4o-mini --replay-sessions --collect-workers 4 \
                        --resume "$HOME/.onpar/story" --out receipt.json
   else
@@ -88,7 +95,7 @@ if need receipt "onpar prove --out receipt.json" receipt.json; then
   record guard       onpar guard receipt.json
   if [ -n "$CANDIDATE" ]; then
     # One pass of the migration loop on the captured traffic: shadow first, always.
-    record migrate-step onpar migrate --candidate qwen3-30b-a3b --candidate-model mlx-community/Qwen3-30B-A3B-8bit \
+    record migrate-step onpar migrate --candidate qwen3-30b-a3b --candidate-model "$CANDIDATE_MODEL" \
                        --candidate-endpoint "$CANDIDATE" --incumbent gpt-4o-mini \
                        --resume "$HOME/.onpar/story" --step
   fi

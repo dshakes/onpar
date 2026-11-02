@@ -1,9 +1,9 @@
-$ onpar migrate --candidate qwen3-30b-a3b --candidate-model mlx-community/Qwen3-30B-A3B-8bit --candidate-endpoint http://127.0.0.1:8000/v1 --incumbent gpt-4o-mini --resume ~/.onpar/story --step
+$ onpar migrate --candidate qwen3-30b-a3b --candidate-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --candidate-endpoint http://127.0.0.1:8001/v1 --incumbent gpt-4o-mini --resume ~/.onpar/story --step
 
   candidate: 197/197 replies   
 
   migration to qwen3-30b-a3b  ·  currently shadow
-  197 captures → 7 shapes → 197 items  ·  receipt d52d8c57b91a
+  197 captures → 7 shapes → 197 items  ·  receipt b3004a62d2d0
 
   HOLD: free text · <=1k context #4 has 1 graded items; 7 more needed before its interval means anything
 
@@ -11,4 +11,4 @@ $ onpar migrate --candidate qwen3-30b-a3b --candidate-model mlx-community/Qwen3-
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1

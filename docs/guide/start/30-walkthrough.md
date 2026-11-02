@@ -41,8 +41,11 @@ the set. See [distill](../loop/20-distill.md).
 
 ## 4. Serve the candidate
 
-`onpar run qwen3-30b-a3b` picks MLX on this machine, writes the native
-`mlx_lm.server` command and starts it on port 8000. Thinking is off by default
+The eval set has a structured-JSON shape, so the candidate is served with
+`onpar run qwen3-30b-a3b --structured-output`. On this machine that picks
+llama.cpp, because it enforces `response_format` with a grammar and
+`mlx_lm.server` cannot. It writes the native `llama-server` command and starts
+it, here on port 8001 because 8000 was already taken. Thinking is off by default
 for Qwen3, so short answers do not run out of tokens mid-thought. See
 [serve](../loop/40-serve.md) for the dry run and the settings.
 
@@ -53,18 +56,19 @@ against what gpt-4o-mini said.
 
 <!-- run: prove -->
 
-The verdict is `Move 0% of traffic`, and it is the right one. The agent work
-looks perfect: 100% decision agreement over 36 steps and 12 of 12 sessions to
-the end. Perfect over 12 items is still a lower bound of 76%. Structured JSON
-failed outright because this server does not enforce `response_format`. The
-other shapes are not proven yet. See [prove](../loop/50-prove.md).
+The verdict is `Move 20% of traffic`. Structured JSON is proven: 100% [91–100]
+over 40 items, every reply the JSON object the request asked for, because the
+server enforced it. The agent work looks perfect: 100% decision agreement over
+36 steps and 12 of 12 sessions to the end. Perfect over 12 items is still a
+lower bound of 76%, so it is not proven yet. Nor are the free-text shapes. See
+[prove](../loop/50-prove.md).
 
 ## 6. Keep the receipt, and the gate
 
-`onpar prove --out receipt.json` wrote a receipt that prints its bad news
-first and verifies by digest. `onpar guard receipt.json` says it still holds.
-`onpar migrate --step` ran one pass and held in shadow, waiting on a shape with
-one item. See [the receipt](../reference/20-receipt.md),
+`onpar prove --out receipt.json` wrote a receipt that prints what is not
+proven before what is, and verifies by digest. `onpar guard receipt.json` says
+it still holds. `onpar migrate --step` ran one pass and held in shadow, waiting
+on a shape with one item. See [the receipt](../reference/20-receipt.md),
 [migrate](../loop/60-migrate.md) and [guard](../loop/70-guard.md).
 
 ## What the owner does next
@@ -77,11 +81,10 @@ The proof says what evidence is missing, so the next steps are specific:
 - **Add a judge for free text.** Free text #1 scored 92% and needs 525 items to
   clear the bar by deterministic grading alone. A judge, checked by a human with
   `onpar label`, can decide the items exact matching cannot.
-- **Serve structured output on an engine that enforces it.** vLLM has a
-  structured-output flag that MLX lacks, and it needs a CUDA machine.
-  `onpar run qwen3-30b-a3b --structured-output --dry-run` lists
-  `structured_output` under `NOT EXPRESSED` when the engine cannot enforce it, so
-  you can check before you prove again.
+- **Decide free text #2.** It scored 86% [72–94] over 37 items, and the
+  report says more items will not clear a 90% bar at that rate. That shape
+  stays on the incumbent until a judge, a different candidate or a different
+  bar changes the answer.
 
 Next: [observe](../loop/10-observe.md), the first stage of the loop on your own
 traffic.

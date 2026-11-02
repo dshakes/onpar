@@ -2,20 +2,20 @@ $ onpar receipt receipt.json
 
 
 Migration receipt · gpt-4o-mini → qwen3-30b-a3b
-issued 2026-11-02 · eval set da030c9c5fb9 · digest 48e81113a0ab
-
-MUST STAY on gpt-4o-mini — proven below the bar:
-  · structured JSON · <=1k context 0% [0%–9%] over 40 items
+issued 2026-11-02 · eval set da030c9c5fb9 · digest a629284e90fe
 
 NOT PROVEN either way — not enough evidence:
   · tools offered, unused · free text · <=1k context 100% [76%–100%] over 12 items — needs 35 to clear the bar at this rate
   · free text · <=1k context #1  92% [80%–97%] over 40 items — needs 525 to clear the bar at this rate
   · tool-calling (2 tools) · empty response · <=1k context 100% [76%–100%] over 12 items (12 duplicate prompt(s) merged) — needs 35 to clear the bar at this rate
-  · free text · <=1k context #2  84% [69%–92%] over 37 items (3 duplicate prompt(s) merged)
+  · free text · <=1k context #2  86% [72%–94%] over 37 items (3 duplicate prompt(s) merged)
   · free text · <=1k context #3  100% [88%–100%] over 29 items (11 duplicate prompt(s) merged) — needs 35 to clear the bar at this rate
   · free text · <=1k context #4  100% [21%–100%] over 1 items — needs 35 to clear the bar at this rate
 
-Movable: 0% of captured traffic
+Proven at or above the 90% bar:
+  · structured JSON · <=1k context 100% [91%–100%] over 40 items
+
+Movable: 20% of captured traffic
 Saving: unknown — no cost rate configured; pass --incumbent-cost and --candidate-cost
 Coverage: incomplete — 6 cluster(s) unresolved
 Judge: none used — every claim is from deterministic graders
@@ -24,4 +24,4 @@ Drawn from 197 captured requests
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1

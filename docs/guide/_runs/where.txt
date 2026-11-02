@@ -35,4 +35,4 @@ $ onpar where qwen3-30b-a3b --context 32k
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1
