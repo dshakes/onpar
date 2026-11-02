@@ -9,7 +9,7 @@
     "dev": "astro dev",
     "prebuild": "node scripts/sync-docs.mjs",
     "build": "astro build",
-    "postbuild": "node scripts/postbuild.mjs",
+    "postbuild": "node scripts/postbuild.mjs && node scripts/check-links.mjs dist /onpar",
     "preview": "astro preview",
     "astro": "astro"
   },

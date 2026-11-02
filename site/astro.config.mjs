@@ -50,9 +50,11 @@ export default defineConfig({
 					items: ['80-implementation-plan', '90-ci-gating', '95-ga-readiness', '70-naming'].map((s) => ({ slug: `docs/${s}` })),
 				},
 				{ label: 'Decisions', collapsed: true, items: [{ autogenerate: { directory: 'docs/adr' } }] },
-				// Manual sidebar links are not base-prefixed by Starlight, so they carry /onpar.
-				{ label: 'Landing page', link: '/onpar/' },
-				{ label: 'Interactive lab', link: '/onpar/lab/' },
+				// Starlight prefixes `base` onto internal sidebar links itself. Writing
+				// '/onpar/' here shipped as /onpar/onpar/ (404) — scripts/check-links.mjs
+				// now crawls dist after every build so that cannot recur.
+				{ label: 'Landing page', link: '/' },
+				{ label: 'Interactive lab', link: '/lab/' },
 			],
 		}),
 	],
