@@ -135,9 +135,26 @@ def test_vllm_emits_its_cited_structured_output_flag():
     assert not [g for g in gaps if g.startswith("structured_output")]
 
 
-def test_mlx_reports_it_under_not_expressed(tmp_path):
+def test_structured_output_on_apple_silicon_picks_the_engine_that_enforces_it(tmp_path):
+    """mlx_lm.server answers a response_format request with prose; llama-server
+    enforces a json_schema by grammar (both probed on an M4 Max, 2026-11-02).
+    So the requirement, not the batching story, picks the Metal engine."""
     p = launch.plan(
         "qwen3-30b-a3b",
+        hw=M4,
+        exists=lambda repo: True,
+        cache=tmp_path / "w.json",
+        structured_output=True,
+    )
+    assert isinstance(p, launch.LaunchPlan), p
+    assert p.argv[0] == "llama-server", p.argv
+    assert "structured_output" not in p.render(), "llama.cpp has no gap to report"
+
+
+def test_mlx_forced_reports_it_under_not_expressed(tmp_path):
+    p = launch.plan(
+        "qwen3-30b-a3b",
+        engine="mlx",
         hw=M4,
         exists=lambda repo: True,
         cache=tmp_path / "w.json",

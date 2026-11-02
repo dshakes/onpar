@@ -36,4 +36,4 @@ $ onpar fit --context 32k --concurrency 8
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1

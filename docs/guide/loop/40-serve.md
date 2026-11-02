@@ -49,6 +49,11 @@ into a unit file or a container spec and it starts the same engine.
 setting, the plan says so and why, rather than inventing a flag the engine would
 reject or silently ignore.
 
+`NOTES` carries what the planner changed its mind about. llama.cpp reserves KV
+for every slot at start-up, so when the 32 slots of interactive headroom would
+not fit, the planner halves the count until the fit holds and says which count
+it checked. That is how this run serves 16 slots at 32k context in 96 GB.
+
 ## Describe the workload instead of tuning it
 
 `onpar build` reads a sentence and plans from it. It quotes back each value it
@@ -73,7 +78,7 @@ budget on reasoning and has nothing left for the answer. `onpar run` and
 |---|---|
 | vLLM, SGLang, llm-d | `--default-chat-template-kwargs '{"enable_thinking":false}'` |
 | MLX | `--chat-template-args '{"enable_thinking":false}'` |
-| llama.cpp | `--reasoning-budget 0` |
+| llama.cpp | `--chat-template-kwargs '{"enable_thinking":false}' --reasoning-budget 0` |
 | Ollama | none server-wide: send `"think": false` on each request |
 
 Pass `--thinking` to keep the reasoning phase on.
@@ -94,48 +99,47 @@ stated budget is reported as unchecked, never as met.
 A speed measurement can say no as well. `onpar measure` times decode on a running
 endpoint and refuses to call the result a measurement when the samples disagree
 by more than 20% of their median, or the load average is above 0.80 per core.
-Both limits are set in `src/onpar/measure.py`. This run was taken while the
-machine was busy:
+Both limits are set in `src/onpar/measure.py`. This run passed both checks:
 
 <!-- run: measure -->
 
-The refusal names the processes that were busy and exits 1. The roofline
-estimate stands, because a number taken under load would carry more authority
-than the estimate and less truth.
+Three samples within 0.2% of each other, at a load of 0.49 per core, is usable.
+When it is not, the refusal names the processes that were busy and exits 1, and
+the roofline estimate stands. The measured 86 tok/s is above the 60 tok/s
+estimate because the estimate is deliberately conservative: it scales the
+machine's bandwidth by `BANDWIDTH_EFFICIENCY`, 0.72 in `src/onpar/fit.py`, and a
+mixture-of-experts model reading 3B active parameters per token can beat that
+on llama.cpp. The output still says what it is: one machine, one moment, one
+prompt shape.
 
 ## What the engine itself will not do
 
 A plan can only promise what the engine enforces. `tools/engine_probe.py` sends
 three real requests to a running endpoint and reports which behaviours hold.
-This run is against the MLX server that `onpar run` started, with thinking off:
+This run is against the llama.cpp server that `onpar run` started, with
+thinking off and structured output required:
 
 <!-- run: engine-probe -->
 
-Two findings from the proof run on this machine on 2026-11-02 explain the
-lines above:
+Each line is a behaviour the proof depends on:
 
-- **Thinking on, no answer.** Served by `mlx_lm.server` with thinking on,
-  Qwen3-30B-A3B spent a small token budget on reasoning and returned empty
-  content. The reasoning arrived in a separate `reasoning` field. Served with
-  `--chat-template-args '{"enable_thinking":false}'`, it answered `billing` in
-  2 tokens, as the `answers` line shows. This is why `onpar run` turns thinking
-  off by default.
-- **`response_format` is not enforced.** `mlx_lm.server` has no grammar or
-  structured-output flag, so the plan lists `structured_output` under
-  `NOT EXPRESSED` for MLX. In the proof, all 40 items in the eval set's
-  structured-JSON cluster asked for `json_object`. The incumbent's baselines
-  are 40 JSON objects. The candidate's replies, recorded in the resume ledger
-  `~/.onpar/story.candidate.jsonl`, hold none: 13 are valid JSON arrays and 27
-  are not valid JSON. It scored 0% on that cluster in the
-  [receipt](../reference/20-receipt.md), which kept it on the incumbent. The
-  `json` probe line shows the same failure in one request.
+- **`answers`.** Served with thinking on, Qwen3-30B-A3B spends a small token
+  budget on reasoning and returns empty content. Served with thinking off, as
+  `onpar run` does by default, it answered `billing` in 2 tokens.
+- **`json`.** The probe asks a prompt that invites prose and requests a JSON
+  object, as the collector does. A JSON object came back, so the server
+  enforces the format by grammar. `mlx_lm.server` has no grammar, which is why
+  `--structured-output` steers the plan to llama.cpp on Apple silicon and why,
+  with `--engine mlx`, the plan lists `structured_output` under `NOT EXPRESSED`.
+- **`tool-call`.** The call arrived as a structured `tool_calls` entry, not as
+  text that looks like one.
 
 Run the probe before you prove against an endpoint. A cluster that fails
 because the server ignores a request field is a server finding, not a model
-finding:
+finding, and the collector names it as one:
 
 ```bash
-python3 tools/engine_probe.py --endpoint http://127.0.0.1:8000/v1 --model mlx-community/Qwen3-30B-A3B-8bit
+python3 tools/engine_probe.py --endpoint http://127.0.0.1:8001/v1 --model Qwen/Qwen3-30B-A3B-GGUF:Q8_0
 ```
 
 It exits 0 when all three probes pass and 1 otherwise.
@@ -146,12 +150,12 @@ Every speed above is a roofline estimate. `onpar measure` replaces one with an
 observation, when the machine lets it:
 
 ```bash
-onpar measure --endpoint http://127.0.0.1:8000/v1 --served-model mlx-community/Qwen3-30B-A3B-8bit --model qwen3-30b-a3b
+onpar measure --endpoint http://127.0.0.1:8001/v1 --served-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --model qwen3-30b-a3b
 ```
 
 `--served-model` is the name the endpoint knows the model by. Pass it whenever
-that differs from the catalogue id: `onpar run` serves the MLX repo
-`mlx-community/Qwen3-30B-A3B-8bit`, not `qwen3-30b-a3b`. `--model` keeps the
+that differs from the catalogue id: `onpar run` serves the GGUF
+`Qwen/Qwen3-30B-A3B-GGUF:Q8_0`, not `qwen3-30b-a3b`. `--model` keeps the
 catalogue id for the roofline comparison. `--warmup N` discards the first decodes
 on hardware that throttles, and `--quant` names what the endpoint actually
 serves. A usable run still says it is one machine, one moment and one prompt
@@ -171,4 +175,5 @@ shape.
   hardware profile you do not have.
 
 Next: [prove](50-prove.md) the candidate on your own traffic with
-`onpar prove evalset.json --candidate-endpoint http://127.0.0.1:8000/v1`.
+`onpar prove evalset.json --candidate-endpoint URL`, where `URL` is the
+endpoint `onpar run` printed.

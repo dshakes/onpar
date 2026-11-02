@@ -1,29 +1,25 @@
-$ onpar prove evalset.json --candidate-endpoint http://127.0.0.1:8000/v1 --candidate qwen3-30b-a3b --candidate-model mlx-community/Qwen3-30B-A3B-8bit --incumbent gpt-4o-mini --replay-sessions --collect-workers 4 --resume ~/.onpar/story --out receipt.json
+$ onpar prove evalset.json --candidate-endpoint http://127.0.0.1:8001/v1 --candidate qwen3-30b-a3b --candidate-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --incumbent gpt-4o-mini --replay-sessions --collect-workers 4 --resume ~/.onpar/story --out receipt.json
 
   candidate: 197/197 replies   
 
   COLLECTED
-  candidate 197/197 replies · http://127.0.0.1:8000/v1 · served: mlx-community/Qwen3-30B-A3B-8bit · 0.00s · 5,130 completion tokens
-    ⚠ 40 of 40 structured-output replies were not the JSON response_format asked for: format not enforced by the server. On an engine with constrained decoding this is a server setting, not a model verdict (`onpar run --structured-output` says whether this engine can enforce it).
-
-REGRET — keep the incumbent for these:
-  structured JSON · <=1k context  (20% of traffic)  0% [0–9] off par
+  candidate 197/197 replies · http://127.0.0.1:8001/v1 · served: Qwen/Qwen3-30B-A3B-GGUF:Q8_0 · 0.00s · 5,119 completion tokens
 
                         tools offered, u  free text · <=1k  tool-calling (2   free text · <=1k  free text · <=1k  free text · <=1k  structured JSON 
                                     (6%)             (20%)             (12%)             (20%)             (20%)              (1%)             (20%)
 ----------------------------------------------------------------------------------------------------------------------------------------------------
-qwen3-30b-a3b              100% [76–100]       92% [80–97]     100% [76–100]       84% [69–92]     100% [88–100]   100% [21–100] ⚠          0% [0–9]   75% [70–77] weighted
+qwen3-30b-a3b              100% [76–100]       92% [80–97]     100% [76–100]       86% [72–94]     100% [88–100]   100% [21–100] ⚠     100% [91–100]   96% [90–97] weighted
 ----------------------------------------------------------------------------------------------------------------------------------------------------
 gpt-4o-mini (incumbent)              100%              100%              100%              100%              100%              100%              100%
 
-weighted verdict 75% [70–77] — Jeffreys posterior simulation, 2000 draws, seed 20260728
+weighted verdict 96% [90–97] — Jeffreys posterior simulation, 2000 draws, seed 20260728
   per-cluster cells above are Wilson score intervals, 95%; the weighted figure is a sum of proportions, which Wilson does not cover
-multiplicity: 7 clusters scored against the same 90% bar; the intervals above are UNADJUSTED. Under Bonferroni (α=0.05/7, z=2.69), none of them clears it even unadjusted.
+multiplicity: 7 clusters scored against the same 90% bar; the intervals above are UNADJUSTED. Under Bonferroni (α=0.05/7, z=2.69), 0 of the 1 that clear it would still clear it.
 to settle the open clusters:
   · tools offered, unused · free text · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
   · free text · <=1k context #1: needs 525 graded items to clear the 90% bar at its observed 92% (has 40, 485 to go)
   · tool-calling (2 tools) · empty response · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
-  · free text · <=1k context #2: 84% [69–92] — the observed rate is at or below the 90% bar; more items will not clear it
+  · free text · <=1k context #2: 86% [72–94] — the observed rate is at or below the 90% bar; more items will not clear it
   · free text · <=1k context #3: needs 35 graded items to clear the 90% bar at its observed 100% (has 29, 6 to go)
   · free text · <=1k context #4: needs 35 graded items to clear the 90% bar at its observed 100% (has 1, 34 to go)
 
@@ -37,13 +33,12 @@ AGENTIC — did the candidate make the same moves?
 ⚠ underpowered clusters (too few samples to conclude): free text · <=1k context #4
 ⚠ 26 duplicate prompt(s) collapsed — tool-calling (2 tools) · empty response · <=1k context (12), free text · <=1k context #2 (3), free text · <=1k context #3 (11). A prompt repeated within a cluster is one observation asked twice, and every interval here assumes independent ones, so the copies are merged rather than counted. An item passes only if every copy of it passed.
 
-Move 0% of traffic to qwen3-30b-a3b.
-  Keep the incumbent for: structured JSON · <=1k context
+Move 20% of traffic to qwen3-30b-a3b.
   Not yet proven: tools offered, unused · free text · <=1k context, free text · <=1k context #1, tool-calling (2 tools) · empty response · <=1k context, free text · <=1k context #2, free text · <=1k context #3, free text · <=1k context #4
     → tools offered, unused · free text · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
     → free text · <=1k context #1: needs 525 graded items to clear the 90% bar at its observed 92% (has 40, 485 to go)
     → tool-calling (2 tools) · empty response · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
-    → free text · <=1k context #2: 84% [69–92] — the observed rate is at or below the 90% bar; more items will not clear it
+    → free text · <=1k context #2: 86% [72–94] — the observed rate is at or below the 90% bar; more items will not clear it
     → free text · <=1k context #3: needs 35 graded items to clear the 90% bar at its observed 100% (has 29, 6 to go)
     → free text · <=1k context #4: needs 35 graded items to clear the 90% bar at its observed 100% (has 1, 34 to go)
   Saving: unknown — no cost rate configured; pass --incumbent-cost and --candidate-cost
@@ -56,4 +51,4 @@ SESSION REPLAY — the whole loop, tool results answered from the recording
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1

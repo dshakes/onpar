@@ -1,22 +1,23 @@
-$ onpar run qwen3-30b-a3b --dry-run
+$ onpar run qwen3-30b-a3b --structured-output --port 8001 --dry-run
 
 
-  MODEL     Qwen3 30B-A3B (MoE) @ q8   (44.2 GB of 96.0 GB usable)
-  WEIGHTS   mlx-community/Qwen3-30B-A3B-8bit   (confirmed; 1 candidate(s) checked)
-  ENGINE    mlx   Apple silicon: the CUDA engines cannot run here at all. MLX has the better batching story of the two Metal options.
-  ENDPOINT  http://127.0.0.1:8000/v1
+  MODEL     Qwen3 30B-A3B (MoE) @ q8   (80.2 GB of 96.0 GB usable)
+  WEIGHTS   Qwen/Qwen3-30B-A3B-GGUF:Q8_0   (confirmed; 1 candidate(s) checked)
+  ENGINE    llama.cpp   Apple silicon with structured output required: llama.cpp enforces response_format with a grammar; mlx_lm.server cannot.
+  ENDPOINT  http://127.0.0.1:8001/v1
   SPEED     ~60 tok/s single-stream   (roofline estimate, not measured)
 
   RUN
-    mlx_lm.server --model mlx-community/Qwen3-30B-A3B-8bit --decode-concurrency 32 --prompt-concurrency 32 --prefill-step-size 2048 --chat-template-args '{"enable_thinking":false}' --host 127.0.0.1 --port 8000
+    llama-server --hf-repo Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --ctx-size 524288 --parallel 16 --ubatch-size 2048 --chat-template-kwargs '{"enable_thinking":false}' --reasoning-budget 0 --host 127.0.0.1 --port 8001
 
   NOT EXPRESSED
-    · context_length: mlx_lm.server takes no context-length flag; context is bounded by the model config and by unified memory
-    · speculative: --draft-model needs a draft model repo (org/name), not 'eagle3'; mlx has no method-name speculative flag
-    · memory_fraction: unified memory: there is no separate VRAM pool to reserve a fraction of
-    · quantization: mlx bakes precision into the weights: serve an -q8 repo rather than converting at start-up
+    · prefix_reuse: no flag disables the prompt cache
+    · speculative: llama.cpp speculation needs a draft GGUF: --model-draft takes a file, not a method name like 'eagle3'
+    · memory_fraction: no VRAM fraction; --n-gpu-layers decides how much of the model is offloaded, and a fraction does not become a layer count without knowing the layer sizes
+    · quantization: llama.cpp serves GGUF, which is already quantised on disk: fetch a q8-flavoured .gguf rather than converting at start-up
 
   NOTES
+    · 16 slots, not the 32 interactive headroom would give: llama.cpp reserves KV for every slot at start-up, and 32 x 32,768 tokens does not fit this machine. Checked at 16; 4 was asked for.
     · weights repo came from the local cache; nothing was fetched to plan this
     · the engine downloads the weights itself on first start; this does not
 
@@ -24,4 +25,4 @@ $ onpar run qwen3-30b-a3b --dry-run
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0
+# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1

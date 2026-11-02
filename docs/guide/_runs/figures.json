@@ -1,5 +1,5 @@
 {
-  "recorded": "recorded 2026-11-02 on M4 Max \u00b7 128 GB \u00b7 onpar 1.4.0",
+  "recorded": "recorded 2026-11-02 on M4 Max \u00b7 128 GB \u00b7 onpar 1.5.1",
   "feasible_models": 5,
   "infeasible_models": 9,
   "catalogue_models": 14,
@@ -10,15 +10,15 @@
   "steps": 36,
   "candidate": "qwen3-30b-a3b",
   "incumbent": "gpt-4o-mini",
-  "proven": 0,
+  "proven": 1,
   "unproven": 6,
-  "regret": 1,
-  "movable_pct": 0,
-  "digest": "48e81113a0ab",
+  "regret": 0,
+  "movable_pct": 20,
+  "digest": "a629284e90fe",
   "weighted": {
-    "point": 75,
-    "low": 70,
-    "high": 77
+    "point": 96,
+    "low": 90,
+    "high": 97
   },
   "agentic": {
     "agreement": 100,
@@ -27,5 +27,5 @@
     "steps": 36,
     "kappa": 1.0
   },
-  "move_pct": 0
+  "move_pct": 20
 }

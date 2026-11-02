@@ -27,9 +27,10 @@ must stay on the incumbent, then what is not proven either way, then what moved.
 
 <!-- run: receipt -->
 
-This receipt moves nothing. One cluster is proven below the bar and six lack the
-evidence to decide, so `Movable` reads 0%. Each unproven line says how many
-graded items it would need. The saving reads unknown because no cost was
+This receipt moves one cluster. Structured JSON is proven at 100% [91–100]
+over 40 items, and six clusters lack the evidence to decide, so `Movable` reads
+20% and not more. Each unproven line says how many graded items it would need,
+or that more will not help. The saving reads unknown because no cost was
 passed, rather than showing an invented figure.
 
 ![Anatomy of a receipt: the clusters that must stay are printed above the ones that passed](../../assets/receipt-anatomy.svg)

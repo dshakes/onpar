@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Inter,system-ui,sans-serif">
-<title id='t'>Can qwen3-30b-a3b replace gpt-4o-mini? The switch loop on 197 recorded captures</title><desc id='d'>Traffic flows through seven stages: observe, distill, fit, prove, deploy, cut over, guard. 197 captures, 7 task shapes, 5 of 14 models fit, agreement kappa 1.00 over 36 steps, weighted 75% [70-77], move 0%. Figures from docs/guide/_runs/figures.json, recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0.</desc>
+<title id='t'>Can qwen3-30b-a3b replace gpt-4o-mini? The switch loop on 197 recorded captures</title><desc id='d'>Traffic flows through seven stages: observe, distill, fit, prove, deploy, cut over, guard. 197 captures, 7 task shapes, 5 of 14 models fit, agreement kappa 1.00 over 36 steps, weighted 96% [90-97], move 20%. Figures from docs/guide/_runs/figures.json, recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1.</desc>
 <style>
 :root{--s0:#0e9bbd;--s1:#8b5cf6;--s2:#c2820b;--s3:#e0405f;--bg:#0d1320;--panel:#111a2b;--ink:#eef4ff;--ink2:#9fb0cc;--muted:#63758f;--grid:#1c2534;}
 @media (prefers-color-scheme:light){:root:not([data-theme=dark]){--s0:#0369a1;--s1:#7e22ce;--s2:#b45309;--s3:#15803d;--bg:#fcfcfb;--panel:#f4f4f2;--ink:#0b0b0b;--ink2:#52514e;--muted:#7a7975;--grid:#e3e3e0;}}
@@ -38,7 +38,7 @@
 <text x="544" y="187" class="cap">vs gpt-4o-mini</text>
 <text x="544" y="218" class="num" style="fill:var(--s0)">κ=1.00</text>
 <text x="544" y="235" class="lb">over 36 steps</text>
-<text x="544" y="256" class="m">75% [70–77]</text>
+<text x="544" y="256" class="m">96% [90–97]</text>
 <circle cx="761" cy="112" r="13" fill="var(--panel)" stroke="var(--s0)"/><circle class="lamp" style="animation-delay:-3s" cx="761" cy="112" r="13" fill="var(--s0)"/><text x="761" y="116" class="nn" text-anchor="middle">5</text>
 <rect x="691" y="146" width="140" height="132" rx="10" fill="var(--panel)" stroke="var(--grid)" stroke-width="1"/><rect class="lamp" style="animation-delay:-3s" x="691" y="146" width="140" height="132" rx="10" fill="none" stroke="var(--s0)" stroke-width="1.6"/>
 <text x="705" y="170" class="ttl">Deploy</text>
@@ -49,8 +49,8 @@
 <rect x="851" y="146" width="140" height="132" rx="10" fill="var(--panel)" stroke="var(--grid)" stroke-width="1"/><rect class="lamp" style="animation-delay:-2s" x="851" y="146" width="140" height="132" rx="10" fill="none" stroke="var(--s0)" stroke-width="1.6"/>
 <text x="865" y="170" class="ttl">Cut over</text>
 <text x="865" y="187" class="cap">shadow first</text>
-<text x="865" y="218" class="num" style="fill:var(--ink)">move 0%</text>
-<text x="865" y="235" class="lb">shadow holds</text>
+<text x="865" y="218" class="num" style="fill:var(--ink)">move 20%</text>
+<text x="865" y="235" class="lb">of traffic moved</text>
 <circle cx="1082" cy="112" r="13" fill="var(--panel)" stroke="var(--s0)"/><circle class="lamp" style="animation-delay:-1s" cx="1082" cy="112" r="13" fill="var(--s0)"/><text x="1082" y="116" class="nn" text-anchor="middle">7</text>
 <rect x="1012" y="146" width="140" height="132" rx="10" fill="var(--panel)" stroke="var(--grid)" stroke-width="1"/><rect class="lamp" style="animation-delay:-1s" x="1012" y="146" width="140" height="132" rx="10" fill="none" stroke="var(--s0)" stroke-width="1.6"/>
 <text x="1026" y="170" class="ttl">Guard</text>
@@ -64,7 +64,7 @@
 <text x="50" y="368" class="cap">serves every request until shadow says otherwise</text>
 <text x="754" y="328" class="kk">CANDIDATE</text>
 <text x="754" y="354" class="num" style="fill:var(--s0)">qwen3-30b-a3b</text>
-<text x="754" y="368" class="cap">0 proven · 6 unproven · 1 regret, of 7 shapes</text>
-<rect x="512" y="322" width="176" height="36" rx="18" fill="var(--panel)" stroke="var(--s0)" stroke-width="1.4"/><text x="600" y="345" class="m" text-anchor="middle">receipt 48e81113a0ab</text>
-<text x="28" y="402" class="note">Every figure is read from the recorded run (recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.4.0). Nothing moves to the candidate until shadow mode says it can.</text>
+<text x="754" y="368" class="cap">1 proven · 6 unproven · 0 regret, of 7 shapes</text>
+<rect x="512" y="322" width="176" height="36" rx="18" fill="var(--panel)" stroke="var(--s0)" stroke-width="1.4"/><text x="600" y="345" class="m" text-anchor="middle">receipt a629284e90fe</text>
+<text x="28" y="402" class="note">Every figure is read from the recorded run (recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1). Nothing moves to the candidate until shadow mode says it can.</text>
 </svg>
