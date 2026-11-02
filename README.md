@@ -174,7 +174,7 @@ That is an illustration with stated inputs, not the recorded run above. The reco
 uvx --from onpar onpar fit           # no install, no deps
 pip install onpar                       # or install it
 brew install dshakes/tap/onpar          # macOS, from the shared tap
-npx onpar-cli@1.4.0 fit                        # same build, via npm
+npx onpar-cli@1.5.0 fit                        # same build, via npm
 onpar version                              # what you have, and where it came from
 ```
 
@@ -184,10 +184,10 @@ onpar version                              # what you have, and where it came fr
 pip install onpar onpar-gateway onpar-core   # observe, distill, prove
 ```
 
-`onpar doctor` checks all three in the order the loop needs them, and ends with the one command to run next. The commands above are unpinned and fetch the newest release — currently **1.4.0**. `npx onpar-cli@1.4.0` runs `onpar` 1.4.0 and nothing else. Pin it when you need a build to stay put:
+`onpar doctor` checks all three in the order the loop needs them, and ends with the one command to run next. The commands above are unpinned and fetch the newest release — currently **1.5.0**. `npx onpar-cli@1.5.0` runs `onpar` 1.5.0 and nothing else. Pin it when you need a build to stay put:
 
 ```bash
-uvx --from onpar==1.4.0 onpar fit   # exactly this build
+uvx --from onpar==1.5.0 onpar fit   # exactly this build
 ```
 
 **Versioning.** `onpar version` reads the installed metadata, not a hand-typed string. Through 0.1.4 receipts were stamped `0.1.0`. Fixed in 0.1.5, so a receipt now names the build that produced it.
