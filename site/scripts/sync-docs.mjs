@@ -106,8 +106,9 @@ function describe(body) {
 	for (const block of body.split(/\n\s*\n/)) {
 		const text = block.trim();
 		if (!text || /^(<|#|!\[|\||```|~~~|---|\* \* \*)/.test(text)) continue;
-		// ADR status lines ("Status: accepted · date") say nothing about the page.
-		if (/^[*_]*status\b/i.test(text)) continue;
+		// Status and version lines ("Status: accepted · date", "Version: 0.1 · Date: …")
+		// say nothing about the page.
+		if (/^[*_]*(status|version|date|format)\b/i.test(text) || text.includes(' · ')) continue;
 		// Lists, and the one-line lead-ins to them ("Two forcing functions:"), aren't summaries.
 		if (/^(\d+\.|[-*+]) /.test(text) || /:$/.test(text)) continue;
 		const plain = text
@@ -152,27 +153,61 @@ mkdirSync(join(OUT, 'adr'), { recursive: true });
 for (const f of docs) writeFileSync(join(OUT, posix.basename(f)), convert(f));
 for (const f of adrs) writeFileSync(join(OUT, 'adr', posix.basename(f)), convert(f));
 
-// /onpar/docs/ itself: a generated index of everything above.
+// /onpar/docs/ itself: a splash page built from the docs' own titles and first
+// paragraphs, so it cannot drift from them. Starlight components, hence .mdx.
 const titleOf = (f) => cleanTitle(readFileSync(join(REPO, f), 'utf8').match(/^# (.+)$/m)?.[1] ?? f);
-const item = (f) => `- [${titleOf(f).replace(/[[\]]/g, '\\$&')}](${rewrite(posix.basename(f), f)})`;
+// MDX reads `<` and `{` inside attributes as JSX, so card text is plain prose only.
+const plain = (t) => t.replace(/[<>{}]/g, '').replace(/\s+/g, ' ').trim();
+// JSX attribute strings have no backslash escapes, so quotes become entities.
+const attr = (t) => '"' + plain(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+const descOf = (f) => plain(describe(readFileSync(join(REPO, f), 'utf8').replace(/^# .+$/m, ''))).slice(0, 220);
+const urlOf = (f) => rewrite(posix.basename(f), f);
+const card = (f, title = titleOf(f)) =>
+	`  <LinkCard title=${attr(title)} description=${attr(descOf(f))} href=${attr(urlOf(f))} />`;
+const grid = (heading, files) => ['', `## ${heading}`, '', '<CardGrid>', ...files.map((f) => card(f)), '</CardGrid>'];
+const byNum = (...nums) => nums.map((n) => docs.find((f) => posix.basename(f).startsWith(n)) ?? `docs/${n}`);
+const latestAdr = adrs[adrs.length - 1];
 writeFileSync(
-	join(OUT, 'index.md'),
+	join(OUT, 'index.mdx'),
 	[
 		'---',
-		'title: "onpar docs"',
+		'title: onpar docs',
 		'description: "The written docs for onpar: the field guide, product specs, operating docs and every architecture decision record."',
+		'template: splash',
 		'editUrl: false',
+		'hero:',
+		'  title: Is the open model on&nbsp;par?',
+		'  tagline: Prove which open-weight model can replace your closed-model API, on your own traffic and hardware, then migrate with a quality gate and a rollback. These pages are generated from the repo, so they cannot drift from it.',
+		'  actions:',
+		'    - text: Start with the field guide',
+		`      link: ${urlOf(byNum('05')[0])}`,
+		'      icon: right-arrow',
+		'    - text: Open the interactive lab',
+		`      link: ${BASE}/lab/`,
+		'      icon: rocket',
+		'      variant: secondary',
+		'    - text: Landing page',
+		`      link: ${BASE}/`,
+		'      variant: minimal',
 		'---',
-		'',
-		`Generated from the repo's [docs/](${GITHUB}/tree/main/docs) folder. The interactive memory lab and the CLI reference live at [the lab](${BASE}/lab/).`,
-		'',
-		'## Docs',
-		'',
-		...docs.map(item),
+		"import { CardGrid, LinkCard } from '@astrojs/starlight/components';",
+		...grid('Start here', byNum('05', '00', '60')),
+		...grid('Product', byNum('10', '20', '30', '40', '50')),
+		...grid('Operating', byNum('80', '90', '95', '70')),
 		'',
 		'## Decisions',
 		'',
-		...adrs.map(item),
+		'<CardGrid>',
+		card(latestAdr, `Latest: ${titleOf(latestAdr)}`),
+		`  <LinkCard title=${JSON.stringify(`All ${adrs.length} architecture decision records`)} description="Every load-bearing choice, including the two later reversed. Each one records the context, the options and why." href=${JSON.stringify(urlOf(adrs[0]))} />`,
+		'</CardGrid>',
+		'',
+		'## Learn on your own numbers',
+		'',
+		'<CardGrid>',
+		`  <LinkCard title="The interactive lab" description="A memory lab that sizes weights, KV cache and overhead as you move the sliders, the written curriculum with diagrams, and the solver-checked CLI reference." href=${JSON.stringify(`${BASE}/lab/`)} />`,
+		`  <LinkCard title="onpar learn basics" description="Fifteen lessons in the terminal, basics then intermediate, where every figure is computed by the solver for the machine you are sitting at." href=${JSON.stringify(`${BASE}/lab/#edu-why`)} />`,
+		'</CardGrid>',
 		'',
 	].join('\n'),
 );
