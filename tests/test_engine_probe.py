@@ -150,3 +150,20 @@ def test_exit_code_follows_the_expected_set(monkeypatch, capsys, expect, code):
         srv.shutdown()
     out = capsys.readouterr().out
     assert "stub-model" in out and ("warn" in out or "FAIL" in out)
+
+
+def test_reasoning_prose_in_content_is_not_an_answer():
+    """llama.cpp with --reasoning-budget 0 and a 0.6B model returned "Okay, the
+    user mentioned they were charged twice…" as content; the first CI run
+    counted that as an answer. A label is an answer; prose is not."""
+    srv, url = _serve(
+        lambda p: {
+            "role": "assistant",
+            "content": "Okay, the user mentioned they were charged twice.",
+        }
+    )
+    try:
+        ok, why = engine_probe.probe_answers(url, "m", 5)
+    finally:
+        srv.shutdown()
+    assert not ok and "not a label" in why

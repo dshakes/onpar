@@ -83,11 +83,13 @@ def probe_answers(endpoint: str, model: str, timeout: float) -> tuple[bool, str]
     msg = r["choices"][0]["message"]
     content = (msg.get("content") or "").strip()
     reasoning = msg.get("reasoning") or msg.get("reasoning_content") or ""
+    tokens = r.get("usage", {}).get("completion_tokens", "?")
+    if content.strip(" .\n\"'").lower() in {"billing", "login", "bug"}:
+        return True, f"answered {content!r} in {tokens} tokens"
     if content:
-        return (
-            True,
-            f"answered {content!r} in {r.get('usage', {}).get('completion_tokens', '?')} tokens",
-        )
+        # Reasoning prose in `content` is not an answer: a small model with a
+        # zero reasoning budget on llama.cpp still thought out loud in the reply.
+        return False, f"answered with prose, not a label: {content[:70]!r}"
     if reasoning:
         return False, "empty answer: the budget went to a reasoning phase (thinking is on)"
     return False, f"empty answer, finish_reason={r['choices'][0].get('finish_reason')}"

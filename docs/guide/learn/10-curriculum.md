@@ -85,7 +85,7 @@ cutover.
 - Over MCP, `onpar_learn` returns the same lessons to an agent. It is read-only:
   nothing is configured or started.
 
-The [interactive lab](/onpar/lab/#edu-why) has a memory lab that sizes weights,
+The [interactive lab](https://dshakes.github.io/onpar/lab/#edu-why) has a memory lab that sizes weights,
 KV cache and overhead as you move the sliders, and the written chapters with
 diagrams.
 
