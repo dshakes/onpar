@@ -921,9 +921,11 @@ def test_ollama_is_fit_checked_at_the_planners_padded_slot_count_not_requested_c
     assert ("OLLAMA_NUM_PARALLEL", "32") in out.env
 
 
-def test_ollama_refuses_rather_than_launch_more_parallelism_than_was_checked(tmp_path):
-    """Same guard, its refusal side: a machine that fits one stream but not the
-    32 the planner pads interactive workloads to must not silently approve."""
+def test_padding_that_does_not_fit_shrinks_to_what_was_checked_not_refuses(tmp_path):
+    """Same guard, the other side: a machine that fits one stream but not the
+    32 the planner pads interactive workloads to launches with fewer slots and
+    says so. `onpar fit` said yes at concurrency 1; refusing here "at
+    concurrency 32" contradicted it with a figure the caller never typed."""
     out = launch.plan(
         "llama-3.1-8b",
         engine="ollama",
@@ -934,5 +936,8 @@ def test_ollama_refuses_rather_than_launch_more_parallelism_than_was_checked(tmp
         hw=AIR,
         cache=tmp_path / "w.json",
     )
-    assert isinstance(out, launch.Refusal), out
-    assert "short by" in out.reason and "GB" in out.reason
+    assert isinstance(out, launch.LaunchPlan), out
+    slots = out.fit.concurrency
+    assert 1 <= slots < 32, slots
+    assert ("OLLAMA_NUM_PARALLEL", str(slots)) in out.env
+    assert any(f"{slots} slots" in n and "1 was asked for" in n for n in out.notes), out.notes

@@ -69,7 +69,7 @@ from .catalog import ModelSpec
 from .engines import Setting, adapter_for, unknown_flags
 from .fit import Fit
 from .hardware import Hardware
-from .plan import Engine, Requirements, Workload
+from .plan import Engine, Knob, Requirements, Workload
 from .plan import plan as configure
 
 __all__ = [
@@ -811,9 +811,37 @@ def plan(
         # plan whose own launch command then asks for far more KV than checked.
         slots = deployment.get(Setting.MAX_CONCURRENT)
         if slots is not None and isinstance(slots.value, int) and slots.value > concurrency:
-            sized = fit.solve(model, sized.quant, machine, context, slots.value)
+            padded = n = slots.value
+            sized = fit.solve(model, sized.quant, machine, context, n)
+            # The padding is headroom, not a requirement. When the KV for the
+            # padded count does not fit, launch with fewer slots rather than
+            # refuse a model that fits at the concurrency the caller asked for
+            # (`onpar fit` already said yes to that; a "no" here contradicted it
+            # with a concurrency the caller never typed). Halving walks 32 -> 16
+            # -> 8 -> 4 -> caller's figure, and each step is re-solved, so the
+            # launch is never at a count the fit was not checked at.
+            while not sized.feasible and n > concurrency:
+                n = max(concurrency, n // 2)
+                sized = fit.solve(model, sized.quant, machine, context, n)
             if not sized.feasible:
-                return _does_not_fit(model, machine, context, slots.value)
+                return _does_not_fit(model, machine, context, n)
+            if n < padded:
+                why = (
+                    f"{n} slots, not the {padded} interactive headroom would give: "
+                    f"{engine_name} reserves KV for every slot at start-up, and "
+                    f"{padded} x {context:,} tokens does not fit this machine. "
+                    f"Checked at {n}; {concurrency} was asked for."
+                )
+                deployment = replace(
+                    deployment,
+                    knobs=tuple(
+                        Knob(Setting.MAX_CONCURRENT, n, why)
+                        if k.name is Setting.MAX_CONCURRENT
+                        else k
+                        for k in deployment.knobs
+                    ),
+                    warnings=(*deployment.warnings, why),
+                )
 
     adapter = adapter_for(engine_name)
     if adapter is None:
