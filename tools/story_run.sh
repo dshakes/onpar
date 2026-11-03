@@ -71,7 +71,7 @@ record build-cannot-meet onpar build "chat assistant" --context 32k --concurrenc
 if [ -n "$CANDIDATE" ]; then
   record engine-probe python3 tools/engine_probe.py --endpoint "$CANDIDATE" --model "$CANDIDATE_MODEL"
   # On a machine doing anything else this refuses to call its number a measurement.
-  record measure     onpar measure --endpoint "$CANDIDATE" --served-model "$CANDIDATE_MODEL" --model qwen3-30b-a3b --samples 3
+  record measure     onpar measure --endpoint "$CANDIDATE" --served-model "$CANDIDATE_MODEL" --model qwen3-30b-a3b --quant q8 --samples 3
 fi
 
 if need distill "onpar observe (and send traffic through it)" "$HOME/.onpar/captures.log"; then
@@ -86,6 +86,17 @@ if need prove "onpar distill" evalset.json; then
                        --candidate qwen3-30b-a3b --candidate-model "$CANDIDATE_MODEL" \
                        --incumbent gpt-4o-mini --replay-sessions --collect-workers 4 \
                        --resume "$HOME/.onpar/story" --out receipt.json
+    # The judge path, run against the same local server so it costs nothing and
+    # disclosed as what it is: the candidate's own family scoring the candidate.
+    # Its human agreement stays UNMEASURED until someone runs `onpar label`, so
+    # the receipt counts its verdicts and refuses to advance a cluster on them.
+    rm -f judged.jsonl
+    record prove-judge onpar prove evalset.json --candidate-endpoint "$CANDIDATE" \
+                       --candidate qwen3-30b-a3b --candidate-model "$CANDIDATE_MODEL" \
+                       --incumbent gpt-4o-mini --replay-sessions --collect-workers 4 \
+                       --resume "$HOME/.onpar/story" \
+                       --judge-endpoint "$CANDIDATE" --judge-model "$CANDIDATE_MODEL" \
+                       --judge-sample judged.jsonl --out receipt-judged.json
   else
     skipped+=("prove: pass --candidate URL of a served model (onpar run <model>)")
   fi

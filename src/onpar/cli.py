@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import json
 import os
 import pathlib
@@ -1110,55 +1111,24 @@ def cmd_measure(args: argparse.Namespace) -> int:
     from . import measure as M
 
     hw = hardware.detect()
-    roofline = None
+    spec = quant = None
     quant_basis = ""
     if args.model:
         try:
             spec = catalog.get(args.model)
         except KeyError:
             spec = None
-        if spec is not None:
-            # `--quant` when the caller knows what the endpoint serves; the
-            # best-fitting quant only as a fallback, and disclosed as a guess.
-            #
-            # Guessing silently was wrong in a way that made every ratio
-            # meaningless: ollama serving qwen2.5-coder:32b at q4 (16.4 GB) was
-            # compared against the q8 roofline (32.8 GB) that `best_quant`
-            # picked because q8 fits in 96 GB. The measurement beat that
-            # roofline by 1.79x — impossible, since nothing decodes faster than
-            # its memory bandwidth, and the impossibility was the only clue that
-            # the two numbers described different models.
-            ctx = _parse_size(args.context)
-            if getattr(args, "quant", None):
-                if args.quant not in spec.quants:
-                    raise ValueError(
-                        f"{spec.id} does not publish {args.quant!r}; it has "
-                        f"{', '.join(spec.quants)}"
-                    )
-                fit_result = fit.solve(spec, args.quant, hw, ctx, args.concurrency)
-                quant_basis = f"--quant {args.quant}"
-                if not fit_result.feasible:
-                    # Disclosed rather than refused, the same choice `fit.Fit`
-                    # makes for `beyond_published_context`: the number is still
-                    # the correct bandwidth arithmetic, it just does not describe
-                    # a config this machine could actually hold.
-                    quant_basis += (
-                        " — does not fit this machine at this context/concurrency; "
-                        "roofline assumes the same bandwidth on hardware that could"
-                    )
-            else:
-                fit_result = fit.best_quant(spec, hw, ctx, args.concurrency)
-                quant_basis = (
-                    f"assumed {fit_result.quant} — the best fit for this machine, "
-                    f"not necessarily what the endpoint serves; pass --quant to be sure"
-                    if fit_result is not None
-                    else ""
+        # `--quant` when the caller knows what the endpoint serves. It does
+        # not depend on measuring, so it is resolved before the call below;
+        # the best-fitting-quant fallback does depend on the context the
+        # samples reach, so it is guessed after, not here.
+        if spec is not None and getattr(args, "quant", None):
+            if args.quant not in spec.quants:
+                raise ValueError(
+                    f"{spec.id} does not publish {args.quant!r}; it has {', '.join(spec.quants)}"
                 )
-            if fit_result is not None:
-                # The like-for-like comparison: single-stream decode against a
-                # single-stream roofline. `aggregate_tokens_per_sec` is the batch
-                # figure and would flatter the measurement at concurrency > 1.
-                roofline = fit_result.tokens_per_sec
+            quant = args.quant
+            quant_basis = f"--quant {args.quant}"
 
     result = M.measure(
         args.endpoint,
@@ -1167,19 +1137,101 @@ def cmd_measure(args: argparse.Namespace) -> int:
         samples=args.samples,
         warmup=args.warmup,
         max_tokens=args.max_tokens,
-        roofline=roofline,
-        roofline_basis=quant_basis,
         api_key=os.environ.get("ONPAR_API_KEY", ""),
     )
+
+    if spec is not None and quant is None:
+        # The best-fitting quant is only a fallback, disclosed as a guess —
+        # and it must be guessed at the context the samples actually reached,
+        # not at a 32k default decided before measuring. Guessing at a fixed
+        # default was wrong in the same way a declared `--quant` not matching
+        # the endpoint is wrong: a model that best-fits q8 at the 300-token
+        # context the samples ran at but only q4 at 32k would still be
+        # compared against q4's roofline, the "two numbers describing
+        # different models" failure this guess exists to avoid, just moved
+        # from the quant axis to the context axis. Falls back to the 32k
+        # ceiling only when the endpoint reported no usage frame to size the
+        # context from.
+        guess_ctx = (
+            _parse_size(args.context)
+            if args.context
+            else (result.context_tokens or _parse_size("32k"))
+        )
+        guess = fit.best_quant(spec, hw, guess_ctx, args.concurrency)
+        if guess is not None:
+            quant = guess.quant
+            quant_basis = (
+                f"assumed {quant} — the best fit for this machine, not necessarily "
+                f"what the endpoint serves; pass --quant to be sure"
+            )
+
+    if spec is not None and quant is not None and (args.context or result.context_tokens):
+        # The roofline is computed AFTER measuring, at the context the samples
+        # actually reached. It used to be computed first, at a 32k default, and
+        # the two numbers then described different workloads: a 300-token
+        # decode reads ~3 GB less KV per token than a 32k one, and a 30B MoE
+        # came out "144% of the estimate" — above its memory bus, which is the
+        # same impossibility the quant comment above describes. The ceiling is
+        # still available by asking for it; it is no longer the silent default.
+        #
+        # An explicit `--context` is a ceiling the caller chose, not a fact
+        # about the samples, so it does not need `result.context_tokens` — an
+        # endpoint that omits usage frames can still be compared against a
+        # ceiling the caller stated by hand.
+        measured_ctx = result.context_tokens
+        ctx = _parse_size(args.context) if args.context else measured_ctx
+        fit_result = fit.solve(spec, quant, hw, ctx, args.concurrency)
+        basis = quant_basis
+        if args.context and measured_ctx is not None:
+            basis += f"; at --context {ctx:,}, not the {measured_ctx:,} tokens the samples ran at"
+        elif args.context:
+            basis += (
+                f"; at --context {ctx:,} — the endpoint reported no usage frame to size "
+                "the samples' own context from"
+            )
+        else:
+            basis += (
+                f"; at the {ctx:,}-token context the samples ran at (prompt + output) — "
+                "pass --context to compare against a ceiling instead"
+            )
+        if not fit_result.feasible:
+            # Disclosed rather than refused, the same choice `fit.Fit` makes for
+            # `beyond_published_context`: the number is still the correct
+            # bandwidth arithmetic, it just does not describe a config this
+            # machine could actually hold.
+            basis += (
+                "; does not fit this machine at this context/concurrency — "
+                "roofline assumes the same bandwidth on hardware that could"
+            )
+        # The like-for-like comparison: single-stream decode against a
+        # single-stream roofline. `aggregate_tokens_per_sec` is the batch
+        # figure and would flatter the measurement at concurrency > 1.
+        tps = fit_result.tokens_per_sec
+        if tps and result.median and result.usable:
+            # What the measurement says BANDWIDTH_EFFICIENCY is on this stack.
+            # One number from one machine is a calibration reading, not a new
+            # constant; it is printed so the gap between the knob and reality
+            # is visible rather than folded into "the estimate is conservative".
+            # Gated on `usable`: a refused run (high variance, contention) is
+            # explicitly NOT A MEASUREMENT, and attributing calibration
+            # authority to it would be exactly the sticky-wrong-number failure
+            # this module exists to prevent.
+            implied = result.median / tps * fit.BANDWIDTH_EFFICIENCY
+            basis += (
+                f"; measured implies {implied:.0%} of theoretical bandwidth, "
+                f"against the {fit.BANDWIDTH_EFFICIENCY:.0%} the planner assumes"
+            )
+        result = dataclasses.replace(result, roofline_tokens_per_sec=tps, roofline_basis=basis)
 
     if args.json:
         print(result.to_json())
     else:
         print(result.render())
-        if roofline is None and args.model:
+        if result.roofline_tokens_per_sec is None and args.model:
             print(
                 f"  No roofline to compare against: {args.model!r} is not in the\n"
-                "  catalogue, or nothing fits on this machine at that context.\n"
+                "  catalogue, this machine's bandwidth is unknown, or the endpoint\n"
+                "  reported no usage frame to size the context from.\n"
             )
 
     if args.out:
@@ -2728,7 +2780,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="tokens to generate per request",
     )
     ms.add_argument(
-        "--context", type=_size_arg, default="32k", help="context for the roofline comparison"
+        "--context",
+        type=_size_arg,
+        default=None,
+        help="compare against the roofline at this context (e.g. 32k) instead of the "
+        "context the samples actually ran at",
     )
     ms.add_argument(
         "--warmup",

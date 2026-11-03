@@ -3,7 +3,7 @@ $ onpar migrate --candidate qwen3-30b-a3b --candidate-model Qwen/Qwen3-30B-A3B-G
   candidate: 197/197 replies   
 
   migration to qwen3-30b-a3b  ·  currently shadow
-  197 captures → 7 shapes → 197 items  ·  receipt b3004a62d2d0
+  197 captures → 7 shapes → 197 items  ·  receipt aa32c5de3042
 
   HOLD: free text · <=1k context #4 has 1 graded items; 7 more needed before its interval means anything
 
@@ -11,4 +11,4 @@ $ onpar migrate --candidate qwen3-30b-a3b --candidate-model Qwen/Qwen3-30B-A3B-G
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1
+# recorded 2026-11-03 on M4 Max · 128 GB · onpar 1.5.2

@@ -103,14 +103,23 @@ Both limits are set in `src/onpar/measure.py`. This run passed both checks:
 
 <!-- run: measure -->
 
-Three samples within 0.2% of each other, at a load of 0.49 per core, is usable.
+Three samples within 0.4% of each other, at a load of 0.56 per core, is usable.
 When it is not, the refusal names the processes that were busy and exits 1, and
-the roofline estimate stands. The measured 86 tok/s is above the 60 tok/s
-estimate because the estimate is deliberately conservative: it scales the
-machine's bandwidth by `BANDWIDTH_EFFICIENCY`, 0.72 in `src/onpar/fit.py`, and a
-mixture-of-experts model reading 3B active parameters per token can beat that
-on llama.cpp. The output still says what it is: one machine, one moment, one
-prompt shape.
+the roofline estimate stands. The measured 92 tok/s is 77% of the 119 tok/s
+roofline at the 152-token context the samples ran at.
+
+An earlier version of this page compared the same measurement against the
+roofline at 32k context, 60 tok/s, and called the estimate "deliberately
+conservative" when the measurement came out at 144% of it. That was the wrong
+comparison. Every decoded token reads the whole KV cache, so the roofline is a
+function of context, and a 150-token decode set against a 32k ceiling is two
+different workloads. The tool now computes the roofline after measuring, at the
+context the samples reached, and prints what the measurement implies for the
+bandwidth-efficiency knob: 56% here, against the 72% that `BANDWIDTH_EFFICIENCY`
+in `src/onpar/fit.py` assumes. One machine is a calibration reading, not a new
+constant, so the knob stays and the gap stays visible on every run. Pass
+`--context 32k` to compare against the ceiling instead. The output still says
+what it is: one machine, one moment, one prompt shape.
 
 ## What the engine itself will not do
 

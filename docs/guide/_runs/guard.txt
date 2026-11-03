@@ -1,11 +1,11 @@
 $ onpar guard receipt.json
 
 
-receipt still holds · a629284e90fe
+receipt still holds · 9c476cc9bf93
 
 
 → nothing — the receipt still holds
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1
+# recorded 2026-11-03 on M4 Max · 128 GB · onpar 1.5.2

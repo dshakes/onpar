@@ -272,7 +272,11 @@ def test_measure_cli_still_prints_the_measurement_alongside_the_roofline_basis(c
     from onpar.hardware import Hardware
 
     def fake_decode_once(endpoint, model, prompt, *, max_tokens, timeout, api_key=""):
-        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05)
+        # `prompt_tokens` set, as a real endpoint reporting usage would: the
+        # context-aware roofline needs a known context to compute at all, and
+        # the point of this test is the basis line surviving alongside it, not
+        # the no-usage-frame fallback covered elsewhere.
+        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05, prompt_tokens=10)
 
     monkeypatch.setattr(M, "_decode_once", fake_decode_once)
 
@@ -311,6 +315,63 @@ def test_measure_cli_still_prints_the_measurement_alongside_the_roofline_basis(c
     out = capsys.readouterr().out
     assert rc in (0, 1)
     assert "median" in out
+
+
+def test_measure_guesses_quant_at_the_measured_context_not_a_32k_default(capsys, monkeypatch):
+    """The best-fitting quant used to be guessed before measuring, at a fixed
+    32k context. A model that best-fits a different quant at the context the
+    samples actually ran at would then be compared against the wrong quant's
+    roofline — the same "two numbers describing different models" failure
+    `--quant` exists to prevent, just moved from the quant axis to the
+    context axis. The guess must run after measuring, at the measured
+    context (10 prompt + 20 output = 30 tokens here), not at 32k.
+    """
+    import onpar.cli as cli
+    from onpar import measure as M
+    from onpar.hardware import Hardware
+
+    def fake_decode_once(endpoint, model, prompt, *, max_tokens, timeout, api_key=""):
+        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05, prompt_tokens=10)
+
+    monkeypatch.setattr(M, "_decode_once", fake_decode_once)
+    monkeypatch.setattr(
+        "onpar.cli.hardware.detect",
+        lambda: Hardware(
+            kind="apple",
+            name="M4 Max",
+            total_bytes=128 * 1024**3,
+            usable_bytes=96 * 1024**3,
+            bandwidth_gbps=546.0,
+            cores=16,
+        ),
+    )
+
+    seen_contexts = []
+    real_best_quant = cli.fit.best_quant
+
+    def spy_best_quant(spec, hw, context, concurrency):
+        seen_contexts.append(context)
+        return real_best_quant(spec, hw, context, concurrency)
+
+    monkeypatch.setattr(cli.fit, "best_quant", spy_best_quant)
+
+    rc = main(
+        [
+            "measure",
+            "--endpoint",
+            "http://127.0.0.1:9/v1",
+            "--model",
+            "qwen3-32b",
+            "--samples",
+            "2",
+        ]
+    )
+    capsys.readouterr()
+    assert rc in (0, 1)
+    assert seen_contexts == [30], (
+        f"guessed at {seen_contexts}, not the 30-token context the samples ran at "
+        "(10 prompt + 20 output)"
+    )
 
 
 def test_measure_rejects_a_quant_the_model_does_not_publish(capsys, monkeypatch):
@@ -367,7 +428,10 @@ def test_measure_json_carries_the_roofline_basis(monkeypatch, capsys):
     from onpar.hardware import Hardware
 
     def fake_decode_once(endpoint, model, prompt, *, max_tokens, timeout, api_key=""):
-        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05)
+        # `prompt_tokens` set, as a real endpoint reporting usage would: a
+        # missing one makes the context unknown and suppresses the roofline
+        # entirely (see test_measure.py), which this test is not about.
+        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05, prompt_tokens=10)
 
     monkeypatch.setattr(M, "_decode_once", fake_decode_once)
     monkeypatch.setattr(
@@ -398,10 +462,115 @@ def test_measure_json_carries_the_roofline_basis(monkeypatch, capsys):
     )
     payload = json.loads(capsys.readouterr().out)
     assert rc in (0, 1)
-    assert payload["roofline_basis"] == "--quant q4", (
+    # Not an exact match: the basis also carries the context the samples ran
+    # at (see cli.py's context-aware roofline), which this test is not about.
+    # What this test guards is that the quant disclosure makes it into the
+    # JSON at all, same as the human-readable render.
+    assert payload["roofline_basis"].startswith("--quant q4"), (
         "the JSON payload must say which quant the roofline describes, same as the "
         "human-readable render"
     )
+
+
+def test_measure_with_no_usage_frame_reports_no_roofline(monkeypatch, capsys):
+    """`context_tokens` used to default a missing `prompt_tokens` to 0, so an
+    endpoint that ignores `stream_options.include_usage` still produced a
+    context-aware roofline sized at completion length alone — a 20-token
+    "context" that was really just the output, flattering the ratio. With no
+    prompt length reported, there is no context to compare at, and the
+    roofline must be suppressed rather than guessed.
+    """
+    from onpar import measure as M
+    from onpar.hardware import Hardware
+
+    def fake_decode_once(endpoint, model, prompt, *, max_tokens, timeout, api_key=""):
+        # No `prompt_tokens` — exactly what an endpoint that never sends a
+        # usage frame looks like.
+        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05)
+
+    monkeypatch.setattr(M, "_decode_once", fake_decode_once)
+    monkeypatch.setattr(
+        "onpar.cli.hardware.detect",
+        lambda: Hardware(
+            kind="apple",
+            name="M4 Max",
+            total_bytes=128 * 1024**3,
+            usable_bytes=96 * 1024**3,
+            bandwidth_gbps=546.0,
+            cores=16,
+        ),
+    )
+
+    rc = main(
+        [
+            "measure",
+            "--endpoint",
+            "http://127.0.0.1:9/v1",
+            "--model",
+            "qwen3-32b",
+            "--quant",
+            "q4",
+            "--samples",
+            "2",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc in (0, 1)
+    assert "median" in out, "the measurement report itself must still print"
+    assert "roofline basis" not in out, "no context was measured, so there is no basis to state"
+    assert "reported no usage frame to size the context from" in out
+
+
+def test_measure_with_explicit_context_still_roofs_without_a_usage_frame(monkeypatch, capsys):
+    """`--context` is a ceiling the caller stated by hand, not a fact about the
+    samples — unlike the measured-context path above, it must not need
+    `result.context_tokens` at all. A prior version gated roofline computation
+    on `result.context_tokens` even when `--context` was given explicitly, so
+    an endpoint that never sends a usage frame got "No roofline" even though
+    the caller had already supplied everything the roofline needs.
+    """
+    from onpar import measure as M
+    from onpar.hardware import Hardware
+
+    def fake_decode_once(endpoint, model, prompt, *, max_tokens, timeout, api_key=""):
+        # No `prompt_tokens` — the endpoint never sends a usage frame.
+        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05)
+
+    monkeypatch.setattr(M, "_decode_once", fake_decode_once)
+    monkeypatch.setattr(
+        "onpar.cli.hardware.detect",
+        lambda: Hardware(
+            kind="apple",
+            name="M4 Max",
+            total_bytes=128 * 1024**3,
+            usable_bytes=96 * 1024**3,
+            bandwidth_gbps=546.0,
+            cores=16,
+        ),
+    )
+
+    rc = main(
+        [
+            "measure",
+            "--endpoint",
+            "http://127.0.0.1:9/v1",
+            "--model",
+            "qwen3-32b",
+            "--quant",
+            "q4",
+            "--context",
+            "32k",
+            "--samples",
+            "2",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc in (0, 1)
+    assert "roofline basis: --quant q4" in out, (
+        "an explicit --context must produce a roofline even with no usage frame"
+    )
+    assert "at --context 32,768" in out
+    assert "endpoint reported no usage frame to size the samples' own context from" in out
 
 
 def test_measure_discloses_a_declared_quant_that_does_not_fit_this_machine(monkeypatch, capsys):
@@ -420,7 +589,9 @@ def test_measure_discloses_a_declared_quant_that_does_not_fit_this_machine(monke
     from onpar.hardware import Hardware
 
     def fake_decode_once(endpoint, model, prompt, *, max_tokens, timeout, api_key=""):
-        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05)
+        # `prompt_tokens` set, as a real endpoint reporting usage would —
+        # needed for the context-aware roofline to fire at all.
+        return M.Sample(tokens=20, decode_seconds=1.0, ttft_seconds=0.05, prompt_tokens=10)
 
     monkeypatch.setattr(M, "_decode_once", fake_decode_once)
     # A machine too small to hold qwen3-32b at fp16, so the declared quant
