@@ -237,7 +237,7 @@ def _does_not_fit(p: Plan, node: Node) -> str:
 
 
 def deployment_for(
-    name: str, namespace: str, model: str, p: Plan, replicas: int = 1
+    name: str, namespace: str, model: str, p: Plan, replicas: int = 1, node: str = ""
 ) -> tuple[dict[str, Any], list[str]]:
     """Build the Deployment for a plan, plus any intents it could not express.
 
@@ -299,6 +299,10 @@ def deployment_for(
             "template": {
                 "metadata": {"labels": labels},
                 "spec": {
+                    # Pinned to the node the plan was SIZED against. Sizing for an
+                    # 8x H100 node and letting the scheduler land the pod on a
+                    # 1x L4 is a wrong-fit incident that sizing cannot prevent.
+                    **({"nodeSelector": {"kubernetes.io/hostname": node}} if node else {}),
                     "containers": [
                         {
                             "name": p.engine.value.replace("-", ""),
@@ -317,7 +321,7 @@ def deployment_for(
                             "ports": [{"containerPort": port}],
                             "resources": resources,
                         }
-                    ]
+                    ],
                 },
             },
         },
@@ -408,7 +412,7 @@ def reconcile(
         )
 
     p = plan(hw, _requirements(spec), spec_model)
-    obj_dep, gaps = deployment_for(name, namespace, model, p)
+    obj_dep, gaps = deployment_for(name, namespace, model, p, node=node.name)
 
     status: dict[str, Any] = {
         "engine": p.engine.value,
@@ -476,9 +480,14 @@ def reconcile(
         return Reconciled(status=status, demote_to=demote)
 
     ok = bool(obj_dep) and not p.warnings and fits
+    # `Ready` means SERVING, which only the Deployment can say; the controller
+    # sets it from `availableReplicas` after it applies. `Planned` is this
+    # function's half: the plan fits and the Deployment is worth applying.
+    # Every failure below is also Ready=False, so a reader of `Ready` alone is
+    # never told something is serving that is not.
     status["conditions"] = [
         condition(
-            "Ready",
+            "Planned" if ok else "Ready",
             ok,
             "Planned"
             if ok
@@ -494,7 +503,8 @@ def reconcile(
                 if not fits
                 else (p.warnings[0] if p.warnings else gaps[0] if gaps else "unknown")
             ),
-        )
+        ),
+        *([condition("Ready", False, "Pending", "no replica is available yet")] if ok else []),
     ]
     return Reconciled(objects=(obj_dep,) if obj_dep else (), status=status)
 

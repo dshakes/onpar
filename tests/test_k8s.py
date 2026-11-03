@@ -339,6 +339,53 @@ def test_a_failure_is_reported_on_the_resource_not_only_logged():
     assert "admission webhook" in cond["message"]
 
 
+def test_the_deployment_is_pinned_to_the_node_it_was_sized_against():
+    r = reconcile(workload(), CLUSTER)
+    sel = r.objects[0]["spec"]["template"]["spec"]["nodeSelector"]
+    assert sel == {"kubernetes.io/hostname": CLUSTER[0].name}
+
+
+def test_planned_is_true_but_ready_is_pending_until_a_replica_is_available():
+    got, calls = run_loop([workload()])
+    conds = {c["type"]: c for c in got["ml/triage"].status["conditions"]}
+    assert conds["Planned"]["status"] == "True" and conds["Planned"]["reason"] == "Planned"
+    assert conds["Ready"]["status"] == "False" and conds["Ready"]["reason"] == "Pending"
+    assert any(a[0] == "apply" for a, _ in calls), "Planned must still gate the apply"
+
+
+def test_ready_follows_the_deployments_available_replicas():
+    class Serving(Recorder):
+        def run(self, args, stdin=None):
+            if args[:2] == ["get", "deployment"]:
+                return json.dumps({"status": {"availableReplicas": 1}})
+            return super().run(args, stdin)
+
+    Recorder.CALLS, Recorder.ITEMS = [], [workload()]
+    got = dict(reconcile_once(Serving(), nodes=CLUSTER))
+    conds = {c["type"]: c for c in got["ml/triage"].status["conditions"]}
+    assert conds["Ready"]["status"] == "True" and conds["Ready"]["reason"] == "Available"
+    assert conds["Planned"]["status"] == "True"
+
+
+def test_an_unfit_plan_is_not_ready_and_not_applied():
+    got, calls = run_loop([workload(context=1_000_000)])
+    conds = {c["type"]: c for c in got["ml/triage"].status["conditions"]}
+    assert conds["Ready"]["status"] == "False" and "Planned" not in conds
+    assert not any(a[0] == "apply" for a, _ in calls)
+
+
+def test_the_kv_note_names_the_engine_that_emits_it():
+    from types import SimpleNamespace
+
+    from onpar.plan import Engine, Requirements, Workload, _kv_cache_dtype
+
+    fit = SimpleNamespace(weight_bytes=10, kv_bytes=90, overhead_bytes=0)  # kv-bound
+    kw = {"req": Requirements(workload=Workload.INTERACTIVE), "fit": fit}
+    sg = _kv_cache_dtype(engine=Engine.SGLANG, **kw).why
+    assert "sglang documents no accuracy figure" in sg and "vLLM publishes" not in sg
+    assert "vLLM publishes no quantitative claim" in _kv_cache_dtype(engine=Engine.VLLM, **kw).why
+
+
 # --- the shipped CRD -----------------------------------------------------------
 
 

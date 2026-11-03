@@ -55,6 +55,7 @@ spec:
         - name: Ready
           type: string
           jsonPath: .status.conditions[?(@.type=="Ready")].status
+          description: True once a replica is available. Planned is the sizing half.
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp

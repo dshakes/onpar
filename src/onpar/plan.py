@@ -558,14 +558,22 @@ def _kv_cache_dtype(req: Requirements, fit: Fit | None, engine: Engine) -> Knob 
         return None
 
     saved = fit.kv_bytes / 2 / 2**30
+    # The accuracy page we verified is vLLM's (llm-d serves vLLM). Naming it for
+    # another engine's plan attributed a claim to the wrong project.
+    claim = (
+        "vLLM publishes no quantitative claim"
+        if engine in (Engine.VLLM, Engine.LLMD)
+        else f"{engine.value} documents no accuracy figure that we verified (vLLM, "
+        f"whose page we checked, publishes no quantitative claim)"
+    )
     return Knob(
         Setting.KV_CACHE_DTYPE,
         "fp8_e4m3",
         f"the KV cache is {kv_share:.0%} of the memory budget, so it — not the "
         f"weights — is what limits this deployment. fp8 roughly halves it, "
         f"freeing about {saved:.0f} GiB for more context or more concurrency. "
-        f"This is the one setting here with a real accuracy cost: vLLM publishes "
-        f"no quantitative claim, some layers are more sensitive than others, and "
+        f"This is the one setting here with a real accuracy cost: {claim}, "
+        f"some layers are more sensitive than others, and "
         f"the default scales are trivial unless you calibrate. Prove it before "
         f"you trust it. e4m3 rather than e5m2 because it also works on ROCm.",
     )
