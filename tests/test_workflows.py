@@ -161,6 +161,29 @@ def test_the_release_workflow_still_fires_on_a_version_tag():
     assert any("[0-9]" in t for t in tags), f"a version tag will not release: {tags}"
 
 
+def test_k8s_reconcile_token_is_read_only():
+    """The job checks out and runs PR-authored code (`python3 -m
+    onpar.k8s.controller`) against a real API server. It needs nothing beyond
+    reading the checkout, so it must not inherit whatever default token scope
+    the repo happens to have — an explicit `permissions: contents: read`
+    caps it regardless of repo-level defaults."""
+    doc = yaml.safe_load((WORKFLOWS / "k8s-reconcile.yml").read_text())
+    assert doc.get("permissions") == {"contents": "read"}, (
+        "k8s-reconcile.yml must declare a read-only top-level `permissions` block"
+    )
+
+
+def test_k8s_reconcile_reruns_when_the_catalog_changes():
+    """The reconcile job resolves `Qwen/Qwen3-32B` through the catalogue
+    before sizing it, so a catalogue row or parser change can break a real
+    cluster reconcile without this check ever running."""
+    doc = yaml.safe_load((WORKFLOWS / "k8s-reconcile.yml").read_text())
+    # PyYAML (YAML 1.1) reads the bare key `on` as the boolean True.
+    paths = doc.get("on", doc.get(True))["pull_request"]["paths"]
+    for required in ("src/onpar/catalog.py", "src/onpar/models.json"):
+        assert required in paths, f"{required} can change the resolved model with no CI coverage"
+
+
 def test_no_secret_material_is_tracked_in_git():
     """A capture key or capture log must never be committed.
 

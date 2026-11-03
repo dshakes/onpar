@@ -1,0 +1,176 @@
+# Does the Kubernetes path work against a real API server?
+#
+# Every k8s test we have feeds the controller canned `kubectl` JSON. That proves
+# the arithmetic and says nothing about the part that has bitten other operators:
+# whether the API server accepts the CRD, whether the Deployment we emit passes
+# real validation, and whether `patch --subresource=status` is allowed by the
+# schema we shipped.
+#
+# So this job is the missing half: a throwaway kind cluster, the real CRD, the
+# example from deploy/README.md, and the controller run for real. No GPU is
+# needed. The controller sizes against node labels and capacity, not against
+# silicon, so we tell the kind node it is an 8x H100 box. That is a stand-in for
+# GPU Feature Discovery, and it is the same label the controller trusts in
+# production.
+#
+# Pods stay Pending, because nothing here can schedule an nvidia.com/gpu limit.
+# That is expected and we do not wait for Ready: the claim under test is "the API
+# server accepts what we generate", not "vLLM boots".
+#
+# Weekly as well as on the PRs that can break it: Kubernetes and kind move on
+# their own schedule, and a red tick is how we hear about a removed API before a
+# user does.
+name: k8s-reconcile
+
+on:
+  pull_request:
+    paths:
+      - src/onpar/k8s/**
+      - deploy/**
+      - src/onpar/engines.py
+      - src/onpar/plan.py
+      - src/onpar/fit.py
+      - src/onpar/catalog.py
+      - src/onpar/models.json
+      - .github/workflows/k8s-reconcile.yml
+  schedule:
+    - cron: "43 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The controller runs PR-authored code against a real API server; it needs
+# nothing beyond reading the checkout, so default-write tokens (never relied
+# on, but not every repo disables them) are not available to it to begin with.
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: onpar
+
+      # kind nodes have no GPU. Kubernetes only reports GPU *counts*; memory
+      # comes from the label GPU Feature Discovery publishes, in MiB. Both are
+      # set here by hand. The status patch needs kubectl >= 1.24 and works
+      # because node capacity lives on the status subresource.
+      - name: Pretend the node is 8x H100
+        run: |
+          set -euo pipefail
+          node=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+          kubectl label node "$node" \
+            nvidia.com/gpu.memory=81559 \
+            nvidia.com/gpu.product=NVIDIA-H100-80GB-HBM3 --overwrite
+          kubectl patch node "$node" --subresource=status --type=merge \
+            -p '{"status":{"capacity":{"nvidia.com/gpu":"8"},"allocatable":{"nvidia.com/gpu":"8"}}}'
+          kubectl get node "$node" -o jsonpath='{.status.allocatable}{"\n"}'
+
+      - name: Apply the CRD and the README example
+        run: |
+          set -euo pipefail
+          kubectl apply -f deploy/crd.yaml
+          kubectl wait --for=condition=Established --timeout=60s \
+            crd/inferenceworkloads.onpar.dev
+          kubectl create namespace ml
+          # Verbatim from deploy/README.md. If the README example stops being
+          # valid against the CRD, this is where we find out.
+          cat > triage.yaml <<'YAML'
+          apiVersion: onpar.dev/v1alpha1
+          kind: InferenceWorkload
+          metadata: {name: triage, namespace: ml}
+          spec:
+            model: Qwen/Qwen3-32B
+            workload: interactive
+            concurrency: 8
+            context: 32768
+            prefixSharing: 0.9
+            structuredOutput: true
+          YAML
+          # Not from the README: the example above has prefixSharing 0.9, which
+          # makes the planner pick SGLang, so on its own it never exercises the
+          # vLLM path. Same model with no shared prefix is the plain case.
+          cat > chat.yaml <<'YAML'
+          apiVersion: onpar.dev/v1alpha1
+          kind: InferenceWorkload
+          metadata: {name: chat, namespace: ml}
+          spec:
+            model: Qwen/Qwen3-32B
+            workload: interactive
+            concurrency: 8
+            context: 32768
+          YAML
+          kubectl apply -f triage.yaml -f chat.yaml
+
+      - name: Reconcile
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python3 -m onpar.k8s.controller --once -n ml
+
+      - name: The API server accepted the generated Deployments
+        run: |
+          set -euo pipefail
+          node=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+          check() {  # name, expected engine
+            kubectl -n ml get deployment "$1" -o yaml
+            d=$(kubectl -n ml get deployment "$1" -o json)
+            jq -e '.metadata.labels["app.kubernetes.io/managed-by"] == "onpar"' <<<"$d"
+            jq -e --arg e "$2" '.metadata.annotations["onpar.dev/engine"] == $e' <<<"$d"
+            jq -e '.spec.template.spec.containers[0].resources.limits["nvidia.com/gpu"] | tonumber >= 1' <<<"$d"
+            # Sized against one node, so the pod must not be free to land on another.
+            jq -e --arg n "$node" '.spec.template.spec.nodeSelector["kubernetes.io/hostname"] == $n' <<<"$d"
+          }
+          check triage sglang
+          check chat vllm
+          kubectl -n ml get deployment chat -o json |
+            jq -e '.spec.template.spec.containers[0].command | join(" ") | contains("vllm serve")'
+          kubectl -n ml get deployment triage -o json |
+            jq -e '.spec.template.spec.containers[0].command | join(" ") | contains("sglang.launch_server")'
+
+      - name: The status was written
+        run: |
+          set -euo pipefail
+          kubectl -n ml get inferenceworkloads -o yaml
+          for n in triage chat; do
+            s=$(kubectl -n ml get inferenceworkload "$n" -o json)
+            jq -e '.status.engine | length > 0' <<<"$s"
+            jq -e '.status.node | length > 0' <<<"$s"
+            # Planned means the plan fit. Ready means serving, and nothing can
+            # serve here: the pod stays Pending because the GPU is a label.
+            jq -e '.status.conditions | map(select(.type == "Planned" and .status == "True" and .reason == "Planned")) | length == 1' <<<"$s"
+            jq -e '.status.conditions | map(select(.type == "Ready" and .status == "False" and .reason == "Pending")) | length == 1' <<<"$s"
+          done
+
+      # A controller that polls runs this same pass forever. If the second pass
+      # errors or changes anything, every interval is a rollout.
+      - name: A second pass changes nothing
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          ids() { kubectl -n ml get deployments -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.uid} {.metadata.generation}{"\n"}{end}'; }
+          before=$(ids)
+          python3 -m onpar.k8s.controller --once -n ml
+          after=$(ids)
+          echo "before: $before"
+          echo "after:  $after"
+          [ "$before" = "$after" ]
+
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o yaml || true
+          kubectl -n ml get all,inferenceworkloads -o yaml || true

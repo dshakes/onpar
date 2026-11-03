@@ -30,6 +30,7 @@ wrong is production traffic on an unproven model.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import subprocess
 import time
@@ -119,6 +120,14 @@ class Kubectl:
         """Apply one object from stdin."""
         return self.run(["apply", "-f", "-"], stdin=json.dumps(obj))
 
+    def available_replicas(self, name: str, namespace: str) -> int:
+        """`status.availableReplicas` of a Deployment; 0 when absent (or dry-run)."""
+        out = self.run(
+            ["get", "deployment", name, "-n", namespace, "-o", "json", "--ignore-not-found"]
+        )
+        status = (json.loads(out).get("status") or {}) if out.strip() else {}
+        return int(status.get("availableReplicas") or 0)
+
     def patch_status(self, name: str, namespace: str, status: dict) -> str:
         """Write the status subresource."""
         return self.run(
@@ -189,10 +198,32 @@ def _ready(r: Reconciled) -> bool:
     this predicate — but the docstring is corrected rather than deleted, because
     the wrong version is the more instructive artifact.
     """
-    for c in r.status.get("conditions", ()):
-        if c.get("type") == "Ready":
-            return str(c.get("status", "True")).lower() == "true"
-    return True
+    # `Planned` is the apply gate. `Ready` means serving and is False on the very
+    # pass that applies, so gating on it would never apply anything.
+    conds = {c.get("type"): c for c in r.status.get("conditions", ())}
+    gate = conds.get("Planned") or conds.get("Ready")
+    return True if gate is None else str(gate.get("status", "True")).lower() == "true"
+
+
+def _serving(kc: Kubectl, r: Reconciled) -> Reconciled:
+    """Set `Ready` from the Deployment's `availableReplicas`, when one was planned.
+
+    Ready=False/Pending until a replica is actually available. A plan that fits
+    a node says nothing about whether the pod ever schedules or the engine boots.
+    """
+    conds = r.status.get("conditions", ())
+    if not r.objects or not any(c.get("type") == "Planned" for c in conds):
+        return r
+    meta = r.objects[0]["metadata"]
+    up = kc.available_replicas(meta["name"], meta["namespace"]) >= 1
+    ready = {
+        "type": "Ready",
+        "status": "True" if up else "False",
+        "reason": "Available" if up else "Pending",
+        "message": "a replica is available" if up else "no replica is available yet",
+    }
+    kept = [c for c in conds if c.get("type") != "Ready"]
+    return dataclasses.replace(r, status={**r.status, "conditions": [*kept, ready]})
 
 
 def reconcile_once(
@@ -239,6 +270,7 @@ def reconcile_once(
             if _ready(r):
                 for obj in r.objects:
                     kc.apply(obj)
+            r = _serving(kc, r)
             if r.status:
                 kc.patch_status(name, ns, r.status)
             if r.demote_to:

@@ -59,6 +59,13 @@ Status:
     structured_output: the grammar-backend flag was not on the verified page.
 ```
 
+`Ready` means a replica is **available**, not that the plan fit: the `Planned`
+condition says the plan fit, and `Ready` stays `False` (reason `Pending`) until
+the Deployment reports an available replica. The Deployment is pinned with a
+`kubernetes.io/hostname` selector to the node it was sized against. The engine
+image tag is unpinned (`:latest`) by default, and the CRD has no image field yet,
+so it cannot be pinned from the InferenceWorkload.
+
 ### Two things worth knowing before you apply it
 
 **`spec.phase` is yours.** The controller lowers it on a regression — a rollback
