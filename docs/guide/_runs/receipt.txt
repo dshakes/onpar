@@ -2,7 +2,7 @@ $ onpar receipt receipt.json
 
 
 Migration receipt · gpt-4o-mini → qwen3-30b-a3b
-issued 2026-11-02 · eval set da030c9c5fb9 · digest a629284e90fe
+issued 2026-11-03 · eval set da030c9c5fb9 · digest 9c476cc9bf93
 
 NOT PROVEN either way — not enough evidence:
   · tools offered, unused · free text · <=1k context 100% [76%–100%] over 12 items — needs 35 to clear the bar at this rate
@@ -24,4 +24,4 @@ Drawn from 197 captured requests
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1
+# recorded 2026-11-03 on M4 Max · 128 GB · onpar 1.5.2

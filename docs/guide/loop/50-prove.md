@@ -106,12 +106,26 @@ faults get their own lines, from `src/onpar/prove/collect.py`:
   and says to serve with thinking off, which `onpar run` does by default, or to
   raise the token limit. Only `content` is ever graded, never the reasoning.
 
-## A judge, if you need one
+## A judge, and what this run's judge did
 
 No judge is built in. `--judge-endpoint URL --judge-model NAME` names one, and
 the model is stamped on the receipt. Each comparison runs twice with positions
 swapped, and a judge that changes its answer with the order is recorded as
-uncertain, never averaged.
+uncertain, never averaged. This run added one, at no cost: the candidate's own
+server, scoring the candidate against the incumbent.
+
+<!-- run: prove-judge -->
+
+The cells did not move, and the three judge lines say why. The judge agreed with
+the deterministic graders on all 78 items both could score, so it is calibrated.
+Its human agreement is unmeasured, so nothing it says can advance a cluster. And
+it produced no decisive verdict at all. The ledger `--judge-sample` wrote shows
+what happened: across 378 swapped comparisons the judge chose position A 156
+times and position B never, and called the rest ties. Every preference flipped
+when the order flipped, so every one was position bias, and the swap check
+turned every one into "uncertain". A 30B model with thinking off, judging its
+own family, is a coin that always lands on the side it was shown first. The
+product's answer to that is the right one: count nothing.
 
 A judge's word counts only once a human has checked it:
 

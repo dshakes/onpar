@@ -1,5 +1,5 @@
 {
-  "recorded": "recorded 2026-11-02 on M4 Max \u00b7 128 GB \u00b7 onpar 1.5.1",
+  "recorded": "recorded 2026-11-03 on M4 Max \u00b7 128 GB \u00b7 onpar 1.5.2",
   "feasible_models": 5,
   "infeasible_models": 9,
   "catalogue_models": 14,
@@ -14,7 +14,7 @@
   "unproven": 6,
   "regret": 0,
   "movable_pct": 20,
-  "digest": "a629284e90fe",
+  "digest": "9c476cc9bf93",
   "weighted": {
     "point": 96,
     "low": 90,

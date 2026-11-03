@@ -295,7 +295,7 @@ measure real decode throughput, or refuse to
 | `--served-model SERVED_MODEL` | the name the endpoint knows it by, when it differs from the catalogue id |
 | `--samples SAMPLES` | timed requests; the median is reported |
 | `--max-tokens MAX_TOKENS` | tokens to generate per request |
-| `--context CONTEXT` | context for the roofline comparison |
+| `--context CONTEXT` | compare against the roofline at this context (e.g. 32k) instead of the context the samples actually ran at |
 | `--warmup N` | decodes to run and discard before sampling, to reach thermal equilibrium. On hardware that throttles the first samples are the fastest, so a cold run measures the burst rate rather than what the machine sustains |
 | `--quant QUANT` | quantisation the endpoint actually serves (q4, q8, ...); without it the roofline assumes the best fit, which may be a different model |
 | `--concurrency CONCURRENCY` | concurrency for the roofline estimate; requests are still sent one at a time |

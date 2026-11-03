@@ -212,6 +212,13 @@ class Sample:
     #: purpose — see the module docstring.
     decode_seconds: float
     ttft_seconds: float
+    #: Prompt length from the usage frame, `None` when the server did not
+    #: report one. The decode loop read the KV cache for these tokens as well
+    #: as the generated ones, so this is what the roofline must be computed
+    #: at — not a ceiling. Kept distinct from an actual zero-length prompt so
+    #: `context_tokens` can tell "unknown" from "none" and refuse the former
+    #: instead of silently sizing the roofline at completion length alone.
+    prompt_tokens: int | None = None
 
     @property
     def tokens_per_sec(self) -> float:
@@ -262,6 +269,30 @@ class Measurement:
     def usable(self) -> bool:
         """Whether this may be reported as a measurement at all."""
         return not self.refused
+
+    @property
+    def context_tokens(self) -> int | None:
+        """The context the decode loop actually reached: prompt plus output.
+
+        The roofline is a function of context — every decoded token reads the
+        whole KV cache — so the like-for-like comparison is at this number,
+        not at a configured ceiling. Comparing a 300-token measurement against
+        a 32k roofline made a 30B MoE look 44% *faster* than its memory bus,
+        which is the same impossibility `roofline_basis` warns about for a
+        mismatched quant, with the context mismatched instead.
+
+        `None` when any sample's prompt length is unknown — an endpoint that
+        ignores `stream_options.include_usage` or omits `prompt_tokens` gives
+        no prompt length at all, and treating that as 0 would size the
+        roofline at completion length alone: a real prompt plus output of
+        300 tokens reported as a 20-token context because only the 20
+        generated tokens were counted. That flatters the ratio the same way
+        the mismatched-quant case does, so it is refused the same way: no
+        context-aware roofline rather than a wrong one.
+        """
+        if not self.samples or any(s.prompt_tokens is None for s in self.samples):
+            return None
+        return max(s.prompt_tokens + s.tokens for s in self.samples)
 
     @property
     def ratio_to_roofline(self) -> float | None:
@@ -366,6 +397,7 @@ def _decode_once(
     tokens = 0
     content_frames = 0
     usage_tokens: int | None = None
+    usage_prompt: int | None = None
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
         for raw in resp:
             line = raw.decode("utf-8", "replace").strip()
@@ -382,8 +414,15 @@ def _decode_once(
                 # A compliant server sends an object; do not assume it.
                 continue
             usage = event.get("usage")
-            if isinstance(usage, dict) and isinstance(usage.get("completion_tokens"), int):
-                usage_tokens = usage["completion_tokens"]
+            if isinstance(usage, dict):
+                # Independent fields: an endpoint that reports prompt usage in
+                # an earlier frame than completion usage — or splits them
+                # across frames entirely — must not have the prompt length
+                # dropped because completion_tokens had not arrived yet.
+                if isinstance(usage.get("completion_tokens"), int):
+                    usage_tokens = usage["completion_tokens"]
+                if isinstance(usage.get("prompt_tokens"), int):
+                    usage_prompt = usage["prompt_tokens"]
             choices = event.get("choices") or [{}]
             delta = (choices[0] or {}).get("delta") or {}
             if not delta.get("content"):
@@ -425,7 +464,12 @@ def _decode_once(
             "token that are the same frame — is the server coalescing the "
             "full response instead of streaming it incrementally?"
         )
-    return Sample(tokens=tokens, decode_seconds=last - first, ttft_seconds=first - started)
+    return Sample(
+        tokens=tokens,
+        decode_seconds=last - first,
+        ttft_seconds=first - started,
+        prompt_tokens=usage_prompt,
+    )
 
 
 def measure(

@@ -1,24 +1,24 @@
-$ onpar measure --endpoint http://127.0.0.1:8001/v1 --served-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --model qwen3-30b-a3b --samples 3
+$ onpar measure --endpoint http://127.0.0.1:8001/v1 --served-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --model qwen3-30b-a3b --quant q8 --samples 3
 
 
   Qwen/Qwen3-30B-A3B-GGUF:Q8_0 via http://127.0.0.1:8001/v1
 
-    sample 1     86.37 tok/s decode   ttft    115 ms   127 tokens
-    sample 2     86.69 tok/s decode   ttft     19 ms   127 tokens
-    sample 3     86.64 tok/s decode   ttft     17 ms   127 tokens
+    sample 1     91.78 tok/s decode   ttft    122 ms   127 tokens
+    sample 2     92.07 tok/s decode   ttft     15 ms   127 tokens
+    sample 3     91.69 tok/s decode   ttft     15 ms   127 tokens
 
-    median     86.64 tok/s   spread 0.4%
-    roofline   60.28 tok/s   estimate
-    measured is 144% of the estimate
+    median     91.78 tok/s   spread 0.4%
+    roofline  118.59 tok/s   estimate
+    measured is 77% of the estimate
 
-    roofline basis: assumed q8 — the best fit for this machine, not necessarily what the endpoint serves; pass --quant to be sure
+    roofline basis: --quant q8; at the 152-token context the samples ran at (prompt + output) — pass --context to compare against a ceiling instead; measured implies 56% of theoretical bandwidth, against the 72% the planner assumes
 
-    before: load 7.77 over 16 cores (0.49/core) · busiest: mediaanalysisd 101%, com.apple.Virtualization.VirtualMachine 44%, ecosystemd 43%
-    after:  load 8.27 over 16 cores (0.52/core) · busiest: mediaanalysisd 101%, Python 99%, node 50%
+    before: load 8.96 over 16 cores (0.56/core) · busiest: mediaanalysisd 154%, perl 100%, Python 83%
+    after:  load 10.09 over 16 cores (0.63/core) · busiest: mediaanalysisd 104%, perl 100%, WindowServer 45%
 
   Usable. Still one machine, one moment, one prompt shape —
   report it as measured here, not as this model's speed.
 
 
 
-# recorded 2026-11-02 on M4 Max · 128 GB · onpar 1.5.1
+# recorded 2026-11-03 on M4 Max · 128 GB · onpar 1.5.2

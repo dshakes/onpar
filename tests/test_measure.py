@@ -159,6 +159,43 @@ def test_one_sample_is_refused_because_it_has_no_spread():
         )
 
 
+# --- context_tokens: an unreported prompt length is unknown, not zero ------------
+
+
+def test_context_tokens_is_unknown_when_the_endpoint_never_reported_prompt_usage():
+    """Used to default a missing `prompt_tokens` to 0, so a sample with no
+    usage frame reported a context of just the generated tokens — flattering
+    the roofline ratio by sizing it at completion length alone instead of
+    refusing. Unknown must say so, not guess zero."""
+    m = M.measure(
+        "http://x/v1",
+        "m",
+        cores=16,
+        samples=2,
+        sampler=_take(_samples(50, 50)),
+        load_reader=_quiet,
+    )
+    assert all(s.prompt_tokens is None for s in m.samples)
+    assert m.context_tokens is None, "an unreported prompt length must not be guessed as zero"
+
+
+def test_context_tokens_sums_prompt_and_output_when_known():
+    m = M.measure(
+        "http://x/v1",
+        "m",
+        cores=16,
+        samples=2,
+        sampler=_take(
+            [
+                M.Sample(tokens=100, decode_seconds=2.0, ttft_seconds=0.1, prompt_tokens=50),
+                M.Sample(tokens=100, decode_seconds=2.0, ttft_seconds=0.1, prompt_tokens=80),
+            ]
+        ),
+        load_reader=_quiet,
+    )
+    assert m.context_tokens == 180, "the largest prompt-plus-output across samples"
+
+
 # --- rule 4: measured must not beat estimated on authority alone -----------------
 
 
@@ -877,3 +914,27 @@ def test_warmup_decodes_are_discarded_not_counted():
         f"median {m.median} includes the discarded warmup rates — "
         "the cold, fast decodes are back in the result"
     )
+
+
+def test_context_tokens_is_prompt_plus_output_not_a_ceiling():
+    """The roofline must be computed at the context the decode loop reached.
+
+    Comparing a 150-token measurement against a 32k roofline reported a 30B MoE
+    at 144% of its estimate — above its memory bus. The context the samples
+    ran at is the only like-for-like basis, and the prompt length comes from
+    the usage frame, so a server that sends none gets no context-aware roofline.
+    """
+    s = [
+        M.Sample(tokens=100, decode_seconds=1.0, ttft_seconds=0.1, prompt_tokens=50),
+        M.Sample(tokens=120, decode_seconds=1.2, ttft_seconds=0.1, prompt_tokens=50),
+    ]
+    m = M.Measurement("m", "http://x/v1", tuple(s), M.Load(0.0, 16), M.Load(0.0, 16))
+    assert m.context_tokens == 170
+    # A server that sends no usage frame gives no prompt length; sizing the
+    # roofline at output length alone would flatter the ratio, so there is none.
+    unknown = M.Sample(tokens=5, decode_seconds=1.0, ttft_seconds=0.1)
+    assert unknown.prompt_tokens is None
+    partial = M.Measurement("m", "http://x/v1", (*s, unknown), M.Load(0.0, 16), M.Load(0.0, 16))
+    assert partial.context_tokens is None
+    none = M.Measurement("m", "http://x/v1", (), M.Load(0.0, 16), M.Load(0.0, 16))
+    assert none.context_tokens is None

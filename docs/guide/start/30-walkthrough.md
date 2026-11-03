@@ -4,7 +4,7 @@ Can an open model on your own machine take over the work you send to a closed
 one?
 
 This page follows one real run from start to finish, on an M4 Max with 128 GB,
-on 2026-11-02. The incumbent is gpt-4o-mini. The candidate is Qwen3 30B-A3B,
+on 2026-11-03. The incumbent is gpt-4o-mini. The candidate is Qwen3 30B-A3B,
 served locally. Every block below is that run's real output. Each stage has its
 own page with the mechanism and the knobs.
 
@@ -78,9 +78,13 @@ The proof says what evidence is missing, so the next steps are specific:
 - **Collect more items where the rate is already good.** Three shapes scored
   100% with 12, 12 and 29 items, and a fourth with one. Each needs 35 to clear
   the bar.
-- **Add a judge for free text.** Free text #1 scored 92% and needs 525 items to
-  clear the bar by deterministic grading alone. A judge, checked by a human with
-  `onpar label`, can decide the items exact matching cannot.
+- **Add a judge for free text, and check it.** Free text #1 scored 92% and
+  needs 525 items to clear the bar by deterministic grading alone. This run tried
+  the cheapest judge there is, the candidate's own server, and it preferred
+  whichever reply it was shown first in every case it did not call a tie. The
+  swap check caught all of it and counted nothing, so the cells did not move.
+  A judge that can decide these items is a different model, checked by a human
+  with `onpar label`. The [prove page](../loop/50-prove.md) has the run.
 - **Decide free text #2.** It scored 86% [72–94] over 37 items, and the
   report says more items will not clear a 90% bar at that rate. That shape
   stays on the incumbent until a judge, a different candidate or a different

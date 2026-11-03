@@ -1,0 +1,56 @@
+$ onpar prove evalset.json --candidate-endpoint http://127.0.0.1:8001/v1 --candidate qwen3-30b-a3b --candidate-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --incumbent gpt-4o-mini --replay-sessions --collect-workers 4 --resume ~/.onpar/story --judge-endpoint http://127.0.0.1:8001/v1 --judge-model Qwen/Qwen3-30B-A3B-GGUF:Q8_0 --judge-sample judged.jsonl --out receipt-judged.json
+
+  candidate: 197/197 replies   
+
+  COLLECTED
+  candidate 197/197 replies · http://127.0.0.1:8001/v1 · served: Qwen/Qwen3-30B-A3B-GGUF:Q8_0 · 0.00s · 5,119 completion tokens
+
+                        tools offered, u  free text · <=1k  tool-calling (2   free text · <=1k  free text · <=1k  free text · <=1k  structured JSON 
+                                    (6%)             (20%)             (12%)             (20%)             (20%)              (1%)             (20%)
+----------------------------------------------------------------------------------------------------------------------------------------------------
+qwen3-30b-a3b              100% [76–100]       92% [80–97]     100% [76–100]       86% [72–94]     100% [88–100]   100% [21–100] ⚠     100% [91–100]   96% [90–97] weighted
+----------------------------------------------------------------------------------------------------------------------------------------------------
+gpt-4o-mini (incumbent)              100%              100%              100%              100%              100%              100%              100%
+
+weighted verdict 96% [90–97] — Jeffreys posterior simulation, 2000 draws, seed 20260728
+  per-cluster cells above are Wilson score intervals, 95%; the weighted figure is a sum of proportions, which Wilson does not cover
+multiplicity: 7 clusters scored against the same 90% bar; the intervals above are UNADJUSTED. Under Bonferroni (α=0.05/7, z=2.69), 0 of the 1 that clear it would still clear it.
+to settle the open clusters:
+  · tools offered, unused · free text · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
+  · free text · <=1k context #1: needs 525 graded items to clear the 90% bar at its observed 92% (has 40, 485 to go)
+  · tool-calling (2 tools) · empty response · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
+  · free text · <=1k context #2: 86% [72–94] — the observed rate is at or below the 90% bar; more items will not clear it
+  · free text · <=1k context #3: needs 35 graded items to clear the 90% bar at its observed 100% (has 29, 6 to go)
+  · free text · <=1k context #4: needs 35 graded items to clear the 90% bar at its observed 100% (has 1, 34 to go)
+
+⚠ judge: Qwen/Qwen3-30B-A3B-GGUF:Q8_0 · human agreement UNMEASURED — below the trust bar; its verdicts are counted in the cells above but cannot advance any cluster
+judge calibration: Qwen/Qwen3-30B-A3B-GGUF:Q8_0 matched the deterministic graders on 100% [95–100] of 78 items scored both ways (calibrated, floor 70% over 10+ items)
+judge length bias: Qwen/Qwen3-30B-A3B-GGUF:Q8_0 · not measurable (0 decisive verdicts, 10 needed)
+
+AGENTIC — did the candidate make the same moves?
+  decision agreement 100% [90–100] over 36 tool-context steps · κ=1.00 (almost perfect), chance-corrected
+  per tool, how often the candidate also called it:
+    lookup_order                   100% [76–100] of 12
+    refund                         100% [76–100] of 12
+⚠ underpowered clusters (too few samples to conclude): free text · <=1k context #4
+⚠ 26 duplicate prompt(s) collapsed — tool-calling (2 tools) · empty response · <=1k context (12), free text · <=1k context #2 (3), free text · <=1k context #3 (11). A prompt repeated within a cluster is one observation asked twice, and every interval here assumes independent ones, so the copies are merged rather than counted. An item passes only if every copy of it passed.
+
+Move 20% of traffic to qwen3-30b-a3b.
+  Not yet proven: tools offered, unused · free text · <=1k context, free text · <=1k context #1, tool-calling (2 tools) · empty response · <=1k context, free text · <=1k context #2, free text · <=1k context #3, free text · <=1k context #4
+    → tools offered, unused · free text · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
+    → free text · <=1k context #1: needs 525 graded items to clear the 90% bar at its observed 92% (has 40, 485 to go)
+    → tool-calling (2 tools) · empty response · <=1k context: needs 35 graded items to clear the 90% bar at its observed 100% (has 12, 23 to go)
+    → free text · <=1k context #2: 86% [72–94] — the observed rate is at or below the 90% bar; more items will not clear it
+    → free text · <=1k context #3: needs 35 graded items to clear the 90% bar at its observed 100% (has 29, 6 to go)
+    → free text · <=1k context #4: needs 35 graded items to clear the 90% bar at its observed 100% (has 1, 34 to go)
+  Saving: unknown — no cost rate configured; pass --incumbent-cost and --candidate-cost
+
+SESSION REPLAY — the whole loop, tool results answered from the recording
+  12/12 sessions followed the incumbent's path to the end · 100% [76–100] · 36/36 steps completed
+  A different route to the same outcome counts as diverged — this measures whether the candidate takes the incumbent's path, not whether it would succeed.
+
+  receipt written to receipt-judged.json
+
+
+
+# recorded 2026-11-03 on M4 Max · 128 GB · onpar 1.5.2
