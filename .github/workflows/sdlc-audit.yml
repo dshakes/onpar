@@ -17,7 +17,13 @@ on:
     # newer run it overwrote the successful audit on the checks board. That is
     # why #26 and #27 both displayed `skipping` for audits that had run and
     # posted findings minutes earlier. Push to re-audit; `synchronize` covers it.
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.svg'
+      - '**/*.lock'
 
 permissions:
   contents: read
@@ -32,8 +38,12 @@ jobs:
     # Fork PRs get a read-only GITHUB_TOKEN, which can't comment or label — skip those too.
     if: >-
       github.actor != 'dependabot[bot]' &&
+      !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    concurrency:
+      group: sdlc-audit-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     outputs:
       key_present: ${{ steps.key.outputs.present }}
       codex_outcome: ${{ steps.codex.outcome }}
@@ -112,6 +122,7 @@ jobs:
     if: >-
       !cancelled() &&
       github.actor != 'dependabot[bot]' &&
+      !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (needs.audit.outputs.key_present != 'true' || needs.audit.outputs.codex_outcome != 'success')
     runs-on: ubuntu-latest
