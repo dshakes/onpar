@@ -18,7 +18,13 @@ on:
     # newer run it overwrote the successful audit on the checks board. That is
     # why #26 and #27 both displayed `skipping` for audits that had run and
     # posted findings minutes earlier. Push to re-audit; `synchronize` covers it.
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.svg'
+      - '**/*.lock'
 
 permissions:
   contents: read
@@ -32,8 +38,12 @@ jobs:
     # Fork PRs get a read-only GITHUB_TOKEN, which can't comment or label — skip those too.
     if: >-
       github.actor != 'dependabot[bot]' &&
+      !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    concurrency:
+      group: sdlc-audit-gemini-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       # Secrets aren't readable in a job-level `if`, so gate every later step on this
       # first step's output. An absent key used to make the job a silent green
@@ -88,6 +98,9 @@ jobs:
           GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          # COST: pinned to Flash-Lite — the CLI default (Pro-class) is ~10–40x the price
+          # per audit. Escalate by hand-running a Pro audit only on large or risky diffs.
+          gemini_model: gemini-3.5-flash-lite
           # The wrapper hardcodes --yolo (auto-approve). Neutralize it by ALLOWLISTING
           # read-only tools only — no shell, no write, no web — so an untrusted diff
           # can't talk the agent into running anything (Codex audit finding on #93).
